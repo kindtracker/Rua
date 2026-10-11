@@ -188,7 +188,7 @@ function Rua.new()
       Lables = {},
       Isa = {
         Opcodes = {
-          -- Unused opcode
+          Copy = 1,
           CallFromRegister = 2,
           LoadNumber = 3,
           LoadString = 4,
@@ -388,6 +388,11 @@ function Rua.new()
           },
 
           Return = {},
+
+          Copy = {
+            [1] = { Type = "Register", Name = "SourceRegister" },
+            [2] = { Type = "Register", Name = "DestinationRegister" },
+          },
         },
 
         NumericOpcodes = {
@@ -1035,6 +1040,13 @@ function Parser:ParseIf(State, Statement)
   end
 end
 
+function Parser:ParseWhile(State, Statement)
+  Statement.Type = "While"
+  Statement.Condition = Parser:ParseExpression(State)
+  Parser:Advance(State)
+  Statement.Body = Parser:ParseBlock(State, "end")
+end
+
 function Parser:ParseStatement(State, IsLocal)
   local Statement = { Local = IsLocal or false }
 
@@ -1068,11 +1080,13 @@ function Parser:ParseStatement(State, IsLocal)
       Parser:ParseReturn(State, Statement)
     elseif Value == "if" then
       Parser:ParseIf(State, Statement)
+    elseif Value == "while" then
+      Parser:ParseWhile(State, Statement)
     else
-      Logger:Error(State, "Unhandled keyword: %s", Value)
+      Logger:Error(State, "Unhandled keyword: %q", Value)
     end
   else
-    Logger:Error(State, "Unhandled token kind: %s", Value)
+    Logger:Error(State, "Unhandled token kind: %q", Value)
   end
 
   return Statement
@@ -1118,14 +1132,12 @@ end
 
 function LuaGenerator:IrProgramToLua(State)
   local Lua = ""
-  local HasLabel = false
   local Tab = "  "
 
   Lua = Lua .. "function Main()\n"
 
   for _, Ir in ipairs(State.Ir.Program) do
     if Ir.Type == "Label" then
-      HasLabel = true
       Lua = Lua .. "end\n\n"
       Lua = Lua .. string.format("function Label%d()\n", Ir.Arguments[1])
     elseif Ir.Type == "Comment" then
@@ -1135,10 +1147,7 @@ function LuaGenerator:IrProgramToLua(State)
     end
   end
 
-  if HasLabel then
-    Lua = Lua .. "end\n"
-  end
-
+  Lua = Lua .. "end\n"
   Lua = Lua .. "\nMain()"
 
   return Lua
@@ -1405,6 +1414,13 @@ function IrGenerator:GenerateIr(State, Ast)
         end
       end
 
+      State.CurrentIr.Type = "Copy"
+      State.CurrentIr.Arguments = {
+        [1] = LocalRegister,
+        [2] = ValueRegister,
+      }
+      IrGenerator:NewIr(State)
+
       return ValueRegister
     end
 
@@ -1415,7 +1431,6 @@ function IrGenerator:GenerateIr(State, Ast)
       [1] = VariableNameRegister,
       [2] = ValueRegister,
     }
-
     IrGenerator:MarkNotUsed(State, VariableNameRegister)
     IrGenerator:MarkNotUsed(State, ValueRegister)
     IrGenerator:NewIr(State)
@@ -1476,7 +1491,12 @@ function IrGenerator:GenerateIr(State, Ast)
   elseif Ast.Type == "BinaryExpression" then
     local LeftRegister = IrGenerator:GenerateIr(State, Ast.Left)
     local RightRegister = IrGenerator:GenerateIr(State, Ast.Right)
-    local ResultRegister = IrGenerator:AllocateRegister(State)
+    local ResultRegister
+    if LeftRegister == RightRegister then
+      ResultRegister = LeftRegister
+    else
+      ResultRegister = IrGenerator:AllocateRegister(State)
+    end
 
     State.CurrentIr.Arguments = {
       [1] = LeftRegister,
@@ -1520,6 +1540,40 @@ function IrGenerator:GenerateIr(State, Ast)
     IrGenerator:MarkNotUsed(State, LeftRegister)
     IrGenerator:MarkNotUsed(State, RightRegister)
     return ResultRegister
+  elseif Ast.Type == "While" then
+    local StartLabel = IrGenerator:NewLabel(State)
+    local EndLabel = IrGenerator:NewLabel(State)
+
+    State.CurrentIr.Type = "Label"
+    State.CurrentIr.Arguments = {
+      [1] = StartLabel,
+    }
+    IrGenerator:NewIr(State)
+
+    local ResultRegister = IrGenerator:GenerateIr(State, Ast.Condition)
+
+    State.CurrentIr.Type = "JumpIfFalseRegister"
+    State.CurrentIr.Arguments = {
+      [1] = EndLabel,
+      [2] = ResultRegister,
+    }
+    IrGenerator:NewIr(State)
+
+    IrGenerator:GenerateBlock(State, Ast.Body)
+
+    State.CurrentIr.Type = "Jump"
+    State.CurrentIr.Arguments = {
+      [1] = StartLabel,
+    }
+    IrGenerator:NewIr(State)
+
+    State.CurrentIr.Type = "Label"
+    State.CurrentIr.Arguments = {
+      [1] = EndLabel,
+    }
+    IrGenerator:NewIr(State)
+  else
+    Logger:Error(State, "Unhandled Ast type: %q", Ast.Type)
   end
 
   State.CurrentIr = { Arguments = {} }
@@ -1998,8 +2052,14 @@ function Vm:Execute(State)
     else
       State.Vm.Pc = #State.Bytecode.Program + 1
     end
+  elseif Opcode == "Copy" then
+    local SourceRegister = Arguments.SourceRegister
+    local DestinationRegister = Arguments.DestinationRegister
+
+    SourceRegister.Type = DestinationRegister.Type
+    SourceRegister.Value = DestinationRegister.Value
   else
-    Logger:Error(State, "Unhandled opcode %q", Opcode)
+    Logger:Error(State, "Unhandled opcode: %q", Opcode)
   end
 end
 
