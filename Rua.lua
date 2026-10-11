@@ -1144,41 +1144,7 @@ function LuaGenerator:IrProgramToLua(State)
   return Lua
 end
 
-function LuaGenerator:ConvertArgumentsToString(Ast)
-  local ArgumentsString = ""
-  local First = true
-
-  for _, Argument in pairs(Ast.Arguments) do
-    if not First then
-      ArgumentsString = ArgumentsString .. ", "
-    end
-    ArgumentsString = ArgumentsString .. LuaGenerator:Generate(Argument)
-
-    First = true
-  end
-
-  return ArgumentsString
-end
-
 function LuaGenerator:Generate(State)
-  local Ast = State
-
-  if Ast.Type == "BinaryExpression" then
-    return string.format("%s %s %s", LuaGenerator:Generate(Ast.Left), Ast.Operator, LuaGenerator:Generate(Ast.Right))
-  elseif Ast.Type == "FunctionCall" then
-    local ArgumentsString = LuaGenerator:ConvertArgumentsToString(Ast)
-    return string.format("%s(%s)", Ast.Name, ArgumentsString)
-  elseif TableHasString({ "Number", "Ident", "Keyword", "Operator" }, Ast.Type) then
-    return tostring(Ast.Value)
-  elseif Ast.Type == "Function" then
-    local ArgumentsString = LuaGenerator:ConvertArgumentsToString(Ast)
-    return string.format("%sfunction %s(%s)", Ast.Local and "local" or "", Ast.Name, ArgumentsString)
-  elseif Ast.Type == "If" then
-    return string.format("if %s then", LuaGenerator:Generate(Ast.Condition))
-  elseif Ast.Type == "Return" then
-    return string.format("return %s", LuaGenerator:Generate(Ast.Value))
-  end
-
   State.Lua.Program = LuaGenerator:IrProgramToLua(State)
 end
 
@@ -1204,7 +1170,7 @@ end
 
 function IrGenerator:GenerateBlock(State, Body)
   for _, Ast in ipairs(Body) do
-    IrGenerator:GenerateIr(State, Ast, true)
+    IrGenerator:GenerateIr(State, Ast)
   end
 end
 
@@ -1272,18 +1238,8 @@ function IrGenerator:ResolveLocal(State, Name)
   return nil
 end
 
-function IrGenerator:GenerateIr(State, Ast, GenerateComment)
-  GenerateComment = GenerateComment or false
-
+function IrGenerator:GenerateIr(State, Ast)
   State.CurrentIr = { Arguments = {} }
-
-  if GenerateComment then
-    State.CurrentIr.Type = "Comment"
-    State.CurrentIr.Arguments = {
-      [1] = LuaGenerator:Generate(Ast),
-    }
-    IrGenerator:NewIr(State)
-  end
 
   if Ast.Type == "FunctionCall" then
     for _, Argument in ipairs(Ast.Arguments) do
@@ -1582,7 +1538,7 @@ function Rua:GenerateIr(State)
   IrGenerator:Initalize(State)
 
   for _, Ast in ipairs(State.Ast) do
-    IrGenerator:GenerateIr(State, Ast, true)
+    IrGenerator:GenerateIr(State, Ast)
   end
 end
 
