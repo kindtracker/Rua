@@ -135,10 +135,6 @@ function VmDebugger:Pause(State)
     Debug.Stepping = true
     Debug.Paused = false
 
-    for _ = 1, 10000000 do
-    end
-
-    --[[
     io.write("(Rua) ")
     local Input = io.read("*l")
 
@@ -200,7 +196,6 @@ function VmDebugger:Pause(State)
     else
       io.write("Unknown command. Type Help.\n")
     end
-       ]]
   end
 end
 

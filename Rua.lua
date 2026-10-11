@@ -1163,8 +1163,6 @@ end
 function LuaGenerator:Generate(State)
   local Ast = State
 
-  print(Ast, Ast.Type)
-
   if Ast.Type == "BinaryExpression" then
     return string.format("%s %s %s", LuaGenerator:Generate(Ast.Left), Ast.Operator, LuaGenerator:Generate(Ast.Right))
   elseif Ast.Type == "FunctionCall" then
@@ -1236,6 +1234,16 @@ function IrGenerator:MarkUsed(State, Register)
 end
 
 function IrGenerator:MarkNotUsed(State, Register)
+  for Index = #State.Ir.Scopes, 1, -1 do
+    local Scope = State.Ir.Scopes[Index]
+
+    for Name, ScopeRegister in pairs(Scope) do
+      if Register == ScopeRegister then
+        return
+      end
+    end
+  end
+
   State.Ir.Registers[Register] = false
 end
 
