@@ -1094,6 +1094,82 @@ function Rua:Parse(State)
   end
 end
 
+local LuaGenerator = {}
+
+function LuaGenerator:Initalize(State)
+  State.Lua.Program = ""
+end
+
+function LuaGenerator:IrToLua(Ir, Tab)
+  if Ir.Type == "Label" then
+    return string.format("function Label%d()\n", Ir.Arguments[1])
+  elseif Ir.Type == "Jump" then
+    return string.format("%sRuaRuntime:Jump(Label%s)\n", Tab, Ir.Arguments[1])
+  else
+    local Arguments = {}
+
+    for _, Argument in ipairs(Ir.Arguments) do
+      table.insert(Arguments, string.format("%q", Argument))
+    end
+
+    return string.format("%sRuaRuntime:%s(%s)\n", Tab, Ir.Type, table.concat(Arguments, ", "))
+  end
+end
+
+function LuaGenerator:IrProgramToLua(State)
+  local Lua = ""
+  local HasLabel = false
+  local Tab = "  "
+
+  Lua = Lua .. "function Main()\n"
+
+  for _, Ir in ipairs(State.Ir.Program) do
+    if Ir.Type == "Label" then
+      HasLabel = true
+      Lua = Lua .. "end\n\n"
+      Lua = Lua .. string.format("function Label%d()\n", Ir.Arguments[1])
+    elseif Ir.Type == "Comment" then
+      Lua = Lua .. "--" .. Ir.Arguments[1] .. "\n"
+    else
+      Lua = Lua .. LuaGenerator:IrToLua(Ir, Tab)
+    end
+  end
+
+  if HasLabel then
+    Lua = Lua .. "end\n"
+  end
+
+  Lua = Lua .. "\nMain()"
+
+  return Lua
+end
+
+function LuaGenerator:Generate(State)
+  local Ast = State
+
+  if Ast.Type == "BinaryExpression" then
+    return string.format("%s %s %s", LuaGenerator:Generate(Ast.Left), Ast.Operator, LuaGenerator:Generate(Ast.Right))
+  elseif Ast.Type == "FunctionCall" then
+    local ArgumentsString = ""
+    local First = true
+
+    for _, Argument in pairs(Ast.Arguments) do
+      if not First then
+        ArgumentsString = ArgumentsString .. ", "
+      end
+      ArgumentsString = ArgumentsString .. LuaGenerator:Generate(Argument)
+
+      First = true
+    end
+
+    return string.format("%s(%s)", Ast.Name, ArgumentsString)
+  elseif TableHasString({ "Number", "Ident", "Keyword", "Operator" }, Ast.Type) then
+    return tostring(Ast.Value)
+  end
+
+  State.Lua.Program = LuaGenerator:IrProgramToLua(State)
+end
+
 local IrGenerator = {}
 
 function IrGenerator:NewIr(State)
@@ -1130,7 +1206,7 @@ function IrGenerator:ConvertStringToIr(State, String)
 end
 
 function IrGenerator:AllocateRegister(State)
-  for Register, Used in pairs(State.Ir.Registers) do
+  for Register, Used in ipairs(State.Ir.Registers) do
     if not Used then
       IrGenerator:MarkUsed(State, Register)
       return Register
@@ -1174,10 +1250,20 @@ function IrGenerator:ResolveLocal(State, Name)
   return nil
 end
 
-function IrGenerator:GenerateIr(State, Ast)
+function IrGenerator:GenerateIr(State, Ast, GenerateComment)
+  GenerateComment = GenerateComment or false
+
   State.CurrentIr = { Arguments = {} }
 
   if Ast.Type == "FunctionCall" then
+    if GenerateComment then
+      State.CurrentIr.Type = "Comment"
+      State.CurrentIr.Arguments = {
+        [1] = LuaGenerator:Generate(Ast),
+      }
+      IrGenerator:NewIr(State)
+    end
+
     for _, Argument in ipairs(Ast.Arguments) do
       local ArgumentRegister = IrGenerator:GenerateIr(State, Argument)
 
@@ -1474,62 +1560,8 @@ function Rua:GenerateIr(State)
   IrGenerator:Initalize(State)
 
   for _, Ast in ipairs(State.Ast) do
-    IrGenerator:GenerateIr(State, Ast)
+    IrGenerator:GenerateIr(State, Ast, true)
   end
-end
-
-local LuaGenerator = {}
-
-function LuaGenerator:Initalize(State)
-  State.Lua.Program = ""
-end
-
-function LuaGenerator:IrToLua(Ir, Level)
-  local Tab = ("  "):rep(Level)
-
-  if Ir.Type == "Label" then
-    return string.format("function Label%d()\n", Ir.Arguments[1])
-  elseif Ir.Type == "Jump" then
-    return string.format("%sRuaRuntime:Jump(Label%s)\n", Tab, Ir.Arguments[1])
-  else
-    local Arguments = {}
-
-    for _, Argument in ipairs(Ir.Arguments) do
-      table.insert(Arguments, string.format("%q", Argument))
-    end
-
-    return string.format("%sRuaRuntime:%s(%s)\n", Tab, Ir.Type, table.concat(Arguments, ", "))
-  end
-end
-
-function LuaGenerator:IrProgramToLua(State)
-  local Lua = ""
-  local Level = 1
-  local HasLabel = false
-
-  Lua = Lua .. "function Main()\n"
-
-  for _, Ir in ipairs(State.Ir.Program) do
-    if Ir.Type == "Label" then
-      HasLabel = true
-      Lua = Lua .. "end\n\n"
-      Lua = Lua .. string.format("function Label%d()\n", Ir.Arguments[1])
-    else
-      Lua = Lua .. LuaGenerator:IrToLua(Ir, Level)
-    end
-  end
-
-  if HasLabel then
-    Lua = Lua .. "end\n"
-  end
-
-  Lua = Lua .. "\nMain()"
-
-  return Lua
-end
-
-function LuaGenerator:Generate(State)
-  State.Lua.Program = LuaGenerator:IrProgramToLua(State)
 end
 
 function Rua:GenerateLua(State)
@@ -1577,10 +1609,22 @@ function BytecodeGenerator:FindLabels(State)
   end
 end
 
+function BytecodeGenerator:StripComments(State)
+  local OriginalIrProgram = State.Ir.Program
+  State.Ir.Program = {}
+
+  for _, Ir in ipairs(OriginalIrProgram) do
+    if Ir.Type ~= "Comment" then
+      table.insert(State.Ir.Program, Ir)
+    end
+  end
+end
+
 function BytecodeGenerator:Initalize(State)
   State.Bytecode.Program = ""
   State.Bytecode.ProgramTable = {}
   State.Bytecode.Labels = {}
+  BytecodeGenerator:StripComments(State)
   BytecodeGenerator:FindLabels(State)
 end
 
@@ -1643,6 +1687,7 @@ end
 
 function Rua:GenerateBytecode(State)
   BytecodeGenerator:Initalize(State)
+  BytecodeGenerator:StripComments(State)
 
   for _, Ir in ipairs(State.Ir.Program) do
     BytecodeGenerator:Generate(State, Ir)
@@ -1693,11 +1738,6 @@ function Vm:ReadString(State)
 end
 
 function Vm:GetRegister(State, Index)
-  if Index < 1 or Index > 256 then
-    Logger:Error(State, "Register index out of bounds: Register%d (valid range: 1-256)", Index)
-    return
-  end
-
   local Frame = State.Vm.Frames[#State.Vm.Frames]
 
   if Frame then
@@ -1710,7 +1750,11 @@ end
 function Vm:SetRegister(State, Index, NewRegister)
   local Frame = State.Vm.Frames[#State.Vm.Frames]
 
-  State.Vm.Registers[Frame.Base + Index] = NewRegister
+  if Frame then
+    Frame.Registers[Index] = NewRegister
+  else
+    State.Vm.Registers[Index] = NewRegister
+  end
 end
 
 function Vm:Decode(State)
@@ -1948,7 +1992,17 @@ function Vm:Execute(State)
   elseif Opcode == "GetVariable" then
     local VariableName = Arguments.VariableName.Value
     local VariableRegister = Arguments.VariableRegister
-    local Value = State.Vm.Environment[VariableName]
+    local Value
+
+    local Frame = State.Vm.Frames[#State.Vm.Frames]
+    if Frame then
+      Value = Frame.Environment[VariableName]
+      if not Value then
+        Value = State.Vm.Environment[VariableName]
+      end
+    else
+      Value = State.Vm.Environment[VariableName]
+    end
 
     if Value then
       VariableRegister.Type = Value.Type
