@@ -436,12 +436,13 @@ function Rua.new()
           },
 
           Index = {
-            [1] = { Type = "Register", Name = "TableRegister" },
+            [1] = { Type = "RegisterTable", Name = "TableRegister" },
             [2] = { Type = "Register", Name = "KeyRegister" },
+            [3] = { Type = "Register", Name = "ResultRegister" },
           },
 
           NewIndex = {
-            [1] = { Type = "Register", Name = "TableRegister" },
+            [1] = { Type = "RegisterTable", Name = "TableRegister" },
             [2] = { Type = "Register", Name = "KeyRegister" },
             [3] = { Type = "Register", Name = "ValueRegister" },
           },
@@ -1959,7 +1960,7 @@ function BytecodeGenerator:GetInstructionSize(State, Ir)
   for Index, ArgumentValue in pairs(Ir.Arguments) do
     local ArgumentType = Schema[Index].Type
 
-    if TableHasString({ "Register", "RegisterString", "RegisterFunction" }, ArgumentType) then
+    if TableHasString({ "Register", "RegisterString", "RegisterFunction", "RegisterTable" }, ArgumentType) then
       Size = Size + 1
     elseif ArgumentType == "Number" then
       Size = Size + 8
@@ -1991,7 +1992,7 @@ function BytecodeGenerator:Generate(State, Ir)
   for Index, ArgumentValue in ipairs(Ir.Arguments) do
     local ArgumentType = Schema[Index].Type
 
-    if TableHasString({ "Register", "RegisterString", "RegisterFunction" }, ArgumentType) then
+    if TableHasString({ "Register", "RegisterString", "RegisterFunction", "RegisterTable" }, ArgumentType) then
       BytecodeGenerator:Write8(State, ArgumentValue)
     elseif ArgumentType == "Number" then
       BytecodeGenerator:WriteDouble(State, ArgumentValue)
@@ -2104,7 +2105,14 @@ function Vm:Decode(State)
     local Type = Argument.Type
     local Value
 
-    if Type == "Register" or Type == "RegisterString" or Type == "RegisterFunction" then
+    if
+      TableHasString({
+        "Register",
+        "RegisterString",
+        "RegisterFunction",
+        "RegisterTable",
+      }, Type)
+    then
       local RegisterIndex = Vm:Read8(State)
       Value = Vm:GetRegister(State, RegisterIndex)
       if State.Stop then
@@ -2116,6 +2124,9 @@ function Vm:Decode(State)
         return
       elseif Type == "RegisterFunction" and Value.Type ~= "Function" then
         Logger:Error(State, "Expected register's type as a function")
+        return
+      elseif Type == "RegisterTable" and Value.Type ~= "Table" then
+        Logger:Error(State, "Expected register's type as a table")
         return
       end
     elseif Type == "Number" then
@@ -2365,6 +2376,32 @@ function Vm:Execute(State)
 
     DestinationRegister.Type = SourceRegister.Type
     DestinationRegister.Value = SourceRegister.Value
+  elseif Opcode == "NewTable" then
+    local ResultRegister = Arguments.ResultRegister
+
+    ResultRegister.Type = "Table"
+    ResultRegister.Value = {}
+  elseif Opcode == "Index" then
+    local TableRegister = Arguments.TableRegister
+    local KeyRegister = Arguments.KeyRegister
+    local ResultRegister = Arguments.ResultRegister
+
+    if Item then
+      ResultRegister.Type = Item.Type
+      ResultRegister.Value = Item.Value
+    else
+      ResultRegister.Type = "Nil"
+      ResultRegister.Value = nil
+    end
+  elseif Opcode == "NewIndex" then
+    local TableRegister = Arguments.TableRegister
+    local KeyRegister = Arguments.KeyRegister
+    local ValueRegister = Arguments.ValueRegister
+
+    TableRegister.Value[KeyRegister.Value] = {
+      Type = ValueRegister.Type,
+      Value = ValueRegister.Value,
+    }
   else
     Logger:Error(State, "Unhandled opcode: %q", Opcode)
   end
@@ -2432,5 +2469,8 @@ Rua.Vm = Vm
 -- File -> Tokenizer -> Tokens -> Parser -> Ast ->
 -- Ir generator -> Ir -> BytecodeGenerator -> Bytecode ->
 -- Register-based Vm
+
+-- TODO: add State.ExitOnError
+-- TODO: add Second return to Rua:Run (Result, Error)
 
 return Rua
