@@ -962,6 +962,67 @@ function Parser:ParsePrimaryExpression(State)
     }
   end
 
+  if Token.Value == "{" then
+    local Table = {
+      Type = "Table",
+      Items = {},
+    }
+
+    Parser:Advance(State)
+
+    while State.CurrentToken and State.CurrentToken.Value ~= "}" do
+      local Item = {}
+
+      if State.CurrentToken.Kind == "Ident" then
+        Parser:Advance(State)
+
+        if State.CurrentToken.Kind == "Operator" and State.CurrentToken.Value == "=" then
+          Parser:Advance(State, -1)
+          Item.Key = State.CurrentToken.Value
+          Parser:Advance(State, 2)
+        end
+      elseif State.CurrentToken.Value == "[" then
+        Parser:Advance(State)
+
+        Item.Key = Parser:ParseExpression(State)
+        if Item.Key == nil then
+          return nil
+        end
+
+        local Kind = Parser:Expect(State, "]")
+        if Kind == nil then
+          return nil
+        end
+
+        Kind = Parser:Expect(State, "=")
+        if Kind == nil then
+          return nil
+        end
+      end
+
+      Item.Value = Parser:ParseExpression(State)
+      if Item.Value == nil then
+        return nil
+      end
+
+      table.insert(Table.Items, Item)
+
+      if State.CurrentToken and (State.CurrentToken.Value == "," or State.CurrentToken.Value == ";") then
+        Parser:Advance(State)
+      elseif not State.CurrentToken or State.CurrentToken.Value ~= "}" then
+        Logger:Error(State, "Expected ',' or '}'")
+        return nil
+      end
+    end
+
+    local Kind = Parser:Expect(State, "}")
+    if Kind == nil then
+      return nil
+    end
+
+    return Table
+  end
+
   return nil
 end
 
