@@ -51,32 +51,33 @@ local BaseKeywords = {
 local ExpressionPrecedence = {
   ["or"] = 1,
   ["and"] = 2,
+  ["not"] = 3,
 
-  ["=="] = 3,
-  ["~="] = 3,
-  ["<"] = 3,
-  [">"] = 3,
-  ["<="] = 3,
-  [">="] = 3,
+  ["=="] = 4,
+  ["~="] = 4,
+  ["<"] = 4,
+  [">"] = 4,
+  ["<="] = 4,
+  [">="] = 4,
 
-  ["|"] = 4,
-  ["~"] = 5,
-  ["&"] = 6,
+  ["|"] = 5,
+  ["~"] = 6,
+  ["&"] = 7,
 
-  ["<<"] = 7,
-  [">>"] = 7,
+  ["<<"] = 8,
+  [">>"] = 8,
 
-  [".."] = 8,
+  [".."] = 9,
 
-  ["+"] = 9,
-  ["-"] = 9,
+  ["+"] = 10,
+  ["-"] = 10,
 
-  ["*"] = 10,
-  ["/"] = 10,
-  ["//"] = 10,
-  ["%"] = 10,
+  ["*"] = 11,
+  ["/"] = 11,
+  ["//"] = 11,
+  ["%"] = 11,
 
-  ["^"] = 11,
+  ["^"] = 12,
 }
 
 local WhiteSpace = "\n\t\r "
@@ -222,6 +223,11 @@ function Rua.new()
           JumpIfTrueRegister = 31,
           Return = 32,
           LoadInteger = 33,
+          And = 34,
+          Or = 35,
+          Not = 36,
+          Negative = 37,
+          Length = 38,
         },
 
         InstructionArguments = {
@@ -393,6 +399,33 @@ function Rua.new()
           Copy = {
             [1] = { Type = "Register", Name = "SourceRegister" },
             [2] = { Type = "Register", Name = "DestinationRegister" },
+          },
+
+          And = {
+            [1] = { Type = "Register", Name = "LeftRegister" },
+            [2] = { Type = "Register", Name = "RightRegister" },
+            [3] = { Type = "Register", Name = "ResultRegister" },
+          },
+
+          Or = {
+            [1] = { Type = "Register", Name = "LeftRegister" },
+            [2] = { Type = "Register", Name = "RightRegister" },
+            [3] = { Type = "Register", Name = "ResultRegister" },
+          },
+
+          Not = {
+            [1] = { Type = "Register", Name = "LeftRegister" },
+            [2] = { Type = "Register", Name = "ResultRegister" },
+          },
+
+          Negative = {
+            [1] = { Type = "Register", Name = "LeftRegister" },
+            [2] = { Type = "Register", Name = "ResultRegister" },
+          },
+
+          Length = {
+            [1] = { Type = "Register", Name = "LeftRegister" },
+            [2] = { Type = "Register", Name = "ResultRegister" },
           },
         },
 
@@ -912,6 +945,23 @@ function Parser:ParsePrimaryExpression(State)
     return Expression
   end
 
+  if TableHasString({ "not", "-", "#" }, Token.Value) then
+    Parser:Advance(State)
+
+    local Precedence = Token.Value == "not" and 3 or 7
+    local Operand = Parser:ParseExpression(State, Precedence)
+
+    if Operand == nil then
+      return nil
+    end
+
+    return {
+      Type = "UnaryExpression",
+      Operator = Token.Value,
+      Operand = Operand,
+    }
+  end
+
   return nil
 end
 
@@ -986,6 +1036,7 @@ function Parser:ParseBlock(State, ...)
       table.insert(Body, Statement)
     end
   end
+
   Parser:Expect(State, ...)
 
   return Body
@@ -1516,7 +1567,12 @@ function IrGenerator:GenerateIr(State, Ast)
     IrGenerator:NewIr(State)
   elseif Ast.Type == "BinaryExpression" then
     local LeftRegister = IrGenerator:GenerateIr(State, Ast.Left)
-    local RightRegister = IrGenerator:GenerateIr(State, Ast.Right)
+
+    local RightRegister
+    if Ast.Right then
+      RightRegister = IrGenerator:GenerateIr(State, Ast.Right)
+    end
+
     local ResultRegister
     if LeftRegister == RightRegister then
       ResultRegister = LeftRegister
@@ -1550,6 +1606,16 @@ function IrGenerator:GenerateIr(State, Ast)
       State.CurrentIr.Type = "EqualOrGreaterThan"
     elseif Ast.Operator == "<=" then
       State.CurrentIr.Type = "EqualOrLessThan"
+    elseif Ast.Operator == "and" then
+      State.CurrentIr.Type = "And"
+    elseif Ast.Operator == "or" then
+      State.CurrentIr.Type = "Or"
+    elseif Ast.Operator == "not" then
+      State.CurrentIr.Type = "Not"
+    elseif Ast.Operator == "Negative" then
+      State.CurrentIr.Type = "Negative"
+    elseif Ast.Operator == "Length" then
+      State.CurrentIr.Type = "Length"
     elseif Ast.Operator == ">" then
       State.CurrentIr.Type = "GreaterThan"
     elseif Ast.Operator == "<" then
@@ -1564,7 +1630,29 @@ function IrGenerator:GenerateIr(State, Ast)
     IrGenerator:NewIr(State)
 
     IrGenerator:MarkNotUsed(State, LeftRegister)
-    IrGenerator:MarkNotUsed(State, RightRegister)
+
+    if RightRegister then
+      IrGenerator:MarkNotUsed(State, RightRegister)
+    end
+
+    return ResultRegister
+  elseif Ast.Type == "UnaryExpression" then
+    local LeftRegister = IrGenerator:GenerateIr(State, Ast.Operand)
+    local ResultRegister = IrGenerator:AllocateRegister(State)
+
+    if Ast.Operator == "not" then
+      State.CurrentIr.Type = "Not"
+    elseif Ast.Operator == "-" then
+      State.CurrentIr.Type = "Negative"
+    elseif Ast.Operator == "#" then
+      State.CurrentIr.Type = "Length"
+    end
+
+    State.CurrentIr.Arguments = {
+      [1] = LeftRegister,
+      [2] = ResultRegister,
+    }
+
     return ResultRegister
   elseif Ast.Type == "While" then
     local StartLabel = IrGenerator:NewLabel(State)
@@ -2013,6 +2101,11 @@ function Vm:Execute(State)
       "Pow",
       "NotEqual",
       "Equal",
+      "And",
+      "Or",
+      "Not",
+      "Negative",
+      "Length",
       "EqualOrGreaterThan",
       "EqualOrLessThan",
       "GreaterThan",
@@ -2042,6 +2135,16 @@ function Vm:Execute(State)
       ResultRegister.Value = Left ~= Right
     elseif Opcode == "Equal" then
       ResultRegister.Value = Left == Right
+    elseif Opcode == "And" then
+      ResultRegister.Value = Left and Right
+    elseif Opcode == "Or" then
+      ResultRegister.Value = Left or Right
+    elseif Opcode == "Not" then
+      ResultRegister.Value = not Left
+    elseif Opcode == "Negative" then
+      ResultRegister.Value = -Left
+    elseif Opcode == "Length" then
+      ResultRegister.Value = #Left
     elseif Opcode == "EqualOrGreaterThan" then
       ResultRegister.Value = Left >= Right
     elseif Opcode == "EqualOrLessThan" then
