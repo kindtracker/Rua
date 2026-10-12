@@ -228,6 +228,9 @@ function Rua.new()
           Not = 36,
           Negative = 37,
           Length = 38,
+          NewTable = 39,
+          Index = 40,
+          NewIndex = 41,
         },
 
         InstructionArguments = {
@@ -426,6 +429,21 @@ function Rua.new()
           Length = {
             [1] = { Type = "Register", Name = "LeftRegister" },
             [2] = { Type = "Register", Name = "ResultRegister" },
+          },
+
+          NewTable = {
+            [1] = { Type = "Register", Name = "ResultRegister" },
+          },
+
+          Index = {
+            [1] = { Type = "Register", Name = "TableRegister" },
+            [2] = { Type = "Register", Name = "KeyRegister" },
+          },
+
+          NewIndex = {
+            [1] = { Type = "Register", Name = "TableRegister" },
+            [2] = { Type = "Register", Name = "KeyRegister" },
+            [3] = { Type = "Register", Name = "ValueRegister" },
           },
         },
 
@@ -1388,6 +1406,13 @@ end
 function IrGenerator:GenerateIr(State, Ast)
   State.CurrentIr = { Arguments = {} }
 
+  if type(Ast) == "string" then
+    return IrGenerator:GenerateIr(State, {
+      Type = "String",
+      Value = Ast,
+    })
+  end
+
   if Ast.Type == "FunctionCall" then
     for _, Argument in ipairs(Ast.Arguments) do
       local ArgumentRegister = IrGenerator:GenerateIr(State, Argument)
@@ -1815,6 +1840,30 @@ function IrGenerator:GenerateIr(State, Ast)
     IrGenerator:NewIr(State)
 
     IrGenerator:LeaveScope(State)
+  elseif Ast.Type == "Table" then
+    local TableRegister = IrGenerator:AllocateRegister(State)
+
+    State.CurrentIr.Type = "NewTable"
+    State.CurrentIr.Arguments = {
+      [1] = TableRegister,
+    }
+    IrGenerator:NewIr(State)
+
+    for _, Item in ipairs(Ast.Items) do
+      local Key, Value = Item.Key, Item.Value
+      local KeyRegister = IrGenerator:GenerateIr(State, Key)
+      local ValueRegister = IrGenerator:GenerateIr(State, Value)
+
+      State.CurrentIr.Type = "NewIndex"
+      State.CurrentIr.Arguments = {
+        [1] = TableRegister,
+        [2] = KeyRegister,
+        [3] = ValueRegister,
+      }
+      IrGenerator:MarkNotUsed(State, KeyRegister)
+      IrGenerator:MarkNotUsed(State, ValueRegister)
+      IrGenerator:NewIr(State)
+    end
   else
     Logger:Error(State, "Unhandled Ast type: %q", Ast.Type)
   end
