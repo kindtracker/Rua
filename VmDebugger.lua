@@ -138,7 +138,7 @@ function VmDebugger:Pause(State)
     io.write("(Rua) ")
     local Input = io.read("*l")
 
-    if not Input then
+    if not Input or Input == "" then
       Debug.Paused = false
       return
     end

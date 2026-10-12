@@ -221,6 +221,7 @@ function Rua.new()
           JumpIfTrueTest = 31,
           JumpIfTrueRegister = 31,
           Return = 32,
+          LoadInteger = 33,
         },
 
         InstructionArguments = {
@@ -1047,6 +1048,29 @@ function Parser:ParseWhile(State, Statement)
   Statement.Body = Parser:ParseBlock(State, "end")
 end
 
+function Parser:ParseFor(State, Statement)
+  Statement.Type = "For"
+  Statement.Name = State.CurrentToken.Value
+  Parser:Advance(State)
+
+  Parser:Expect(State, "=")
+  Statement.Start = Parser:ParseExpression(State)
+  Parser:Expect(State, ",")
+  Statement.Limit = Parser:ParseExpression(State)
+  Parser:Expect(State, ",", "do")
+  Parser:Advance(State, -1)
+  if State.CurrentToken.Value == "," then
+    Parser:Advance(State)
+    Statement.Step = Parser:ParseExpression(State)
+  else
+    Statement.Step = { Type = "Number", Value = 1 }
+  end
+
+  Parser:Expect(State, "do")
+
+  Statement.Body = Parser:ParseBlock(State, "end")
+end
+
 function Parser:ParseStatement(State, IsLocal)
   local Statement = { Local = IsLocal or false }
 
@@ -1082,6 +1106,8 @@ function Parser:ParseStatement(State, IsLocal)
       Parser:ParseIf(State, Statement)
     elseif Value == "while" then
       Parser:ParseWhile(State, Statement)
+    elseif Value == "for" then
+      Parser:ParseFor(State, Statement)
     else
       Logger:Error(State, "Unhandled keyword: %q", Value)
     end
@@ -1365,10 +1391,10 @@ function IrGenerator:GenerateIr(State, Ast)
 
     return ResultRegister
   elseif Ast.Type == "Ident" then
-    local LocalRegister = IrGenerator:ResolveLocal(State, Ast.Value)
+    local IndexRegister = IrGenerator:ResolveLocal(State, Ast.Value)
 
-    if LocalRegister then
-      return LocalRegister
+    if IndexRegister then
+      return IndexRegister
     end
 
     local VariableNameRegister = IrGenerator:ConvertStringToIr(State, Ast.Value)
@@ -1396,15 +1422,15 @@ function IrGenerator:GenerateIr(State, Ast)
     return ResultRegister
   elseif Ast.Type == "VariableAssign" then
     if Ast.Local then
-      local LocalRegister = IrGenerator:GenerateIr(State, Ast.Value)
-      IrGenerator:DeclareLocal(State, Ast.Name, LocalRegister)
-      return LocalRegister
+      local IndexRegister = IrGenerator:GenerateIr(State, Ast.Value)
+      IrGenerator:DeclareLocal(State, Ast.Name, IndexRegister)
+      return IndexRegister
     end
 
-    local LocalRegister = IrGenerator:ResolveLocal(State, Ast.Name)
+    local IndexRegister = IrGenerator:ResolveLocal(State, Ast.Name)
     local ValueRegister = IrGenerator:GenerateIr(State, Ast.Value)
 
-    if LocalRegister ~= nil then
+    if IndexRegister ~= nil then
       for Index = #State.Ir.Scopes, 1, -1 do
         local Scope = State.Ir.Scopes[Index]
 
@@ -1416,7 +1442,7 @@ function IrGenerator:GenerateIr(State, Ast)
 
       State.CurrentIr.Type = "Copy"
       State.CurrentIr.Arguments = {
-        [1] = LocalRegister,
+        [1] = IndexRegister,
         [2] = ValueRegister,
       }
       IrGenerator:NewIr(State)
@@ -1572,6 +1598,74 @@ function IrGenerator:GenerateIr(State, Ast)
       [1] = EndLabel,
     }
     IrGenerator:NewIr(State)
+  elseif Ast.Type == "For" then
+    local IndexRegister = IrGenerator:GenerateIr(State, Ast.Start)
+    local LimitRegister = IrGenerator:GenerateIr(State, Ast.Limit)
+    local StepRegister = IrGenerator:GenerateIr(State, Ast.Step)
+
+    IrGenerator:EnterScope(State)
+    IrGenerator:DeclareLocal(State, Ast.Name, IndexRegister)
+
+    local StartLabel = IrGenerator:NewLabel(State)
+    local EndLabel = IrGenerator:NewLabel(State)
+
+    State.CurrentIr.Type = "Label"
+    State.CurrentIr.Arguments = {
+      [1] = StartLabel,
+    }
+    IrGenerator:NewIr(State)
+
+    local ConditionRegister = IrGenerator:AllocateRegister(State)
+
+    State.CurrentIr.Type = "EqualOrLessThan"
+    State.CurrentIr.Arguments = {
+      [1] = IndexRegister,
+      [2] = LimitRegister,
+      [3] = ConditionRegister,
+    }
+    IrGenerator:NewIr(State)
+
+    State.CurrentIr.Type = "JumpIfFalseRegister"
+    State.CurrentIr.Arguments = {
+      [1] = EndLabel,
+      [2] = ConditionRegister,
+    }
+    IrGenerator:MarkNotUsed(State, ConditionRegister)
+    IrGenerator:NewIr(State)
+
+    IrGenerator:GenerateBlock(State, Ast.Body)
+
+    local IncrementRegister = IrGenerator:AllocateRegister(State)
+
+    State.CurrentIr.Type = "Add"
+    State.CurrentIr.Arguments = {
+      [1] = IndexRegister,
+      [2] = StepRegister,
+      [3] = IncrementRegister,
+    }
+    IrGenerator:NewIr(State)
+
+    State.CurrentIr.Type = "Copy"
+    State.CurrentIr.Arguments = {
+      [1] = IncrementRegister,
+      [2] = IndexRegister,
+    }
+    IrGenerator:MarkNotUsed(State, IncrementRegister)
+    IrGenerator:NewIr(State)
+
+    State.CurrentIr.Type = "Jump"
+    State.CurrentIr.Arguments = {
+      [1] = StartLabel,
+    }
+    IrGenerator:NewIr(State)
+
+    State.CurrentIr.Type = "Label"
+    State.CurrentIr.Arguments = {
+      [1] = EndLabel,
+    }
+    IrGenerator:NewIr(State)
+
+    IrGenerator:LeaveScope(State)
   else
     Logger:Error(State, "Unhandled Ast type: %q", Ast.Type)
   end
@@ -2056,8 +2150,8 @@ function Vm:Execute(State)
     local SourceRegister = Arguments.SourceRegister
     local DestinationRegister = Arguments.DestinationRegister
 
-    SourceRegister.Type = DestinationRegister.Type
-    SourceRegister.Value = DestinationRegister.Value
+    DestinationRegister.Type = SourceRegister.Type
+    DestinationRegister.Value = SourceRegister.Value
   else
     Logger:Error(State, "Unhandled opcode: %q", Opcode)
   end
