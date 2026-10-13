@@ -1886,7 +1886,7 @@ function IrGenerator:GenerateIr(State, Ast)
     local TableRegister = IrGenerator:GetVariable(State, TableName)
     local ResultRegister = IrGenerator:AllocateRegister(State)
 
-    for _, MemberName in ipairs(Ast.Member) do
+    for MemberIndex, MemberName in ipairs(Ast.Member) do
       local MemberNameRegister = IrGenerator:ConvertStringToIr(State, MemberName)
 
       State.CurrentIr.Type = "Index"
@@ -1897,6 +1897,17 @@ function IrGenerator:GenerateIr(State, Ast)
       }
       IrGenerator:MarkNotUsed(State, MemberNameRegister)
       IrGenerator:NewIr(State)
+
+      if #Ast.Member ~= MemberIndex then
+        State.CurrentIr.Type = "Copy"
+        State.CurrentIr.Arguments = {
+          [1] = ResultRegister,
+          [2] = TableRegister,
+        }
+        IrGenerator:NewIr(State)
+      end
+
+      First = false
     end
 
     IrGenerator:MarkNotUsed(State, TableRegister)
