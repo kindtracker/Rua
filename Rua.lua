@@ -935,7 +935,7 @@ function Parser:ParsePrimaryExpression(State)
 
       Expression = {
         Type = "GetMember",
-        Object = Expression,
+        Table = Expression.Value,
         Member = MemberNames,
       }
     end
@@ -1423,6 +1423,28 @@ function IrGenerator:ResolveLocal(State, Name)
   return nil
 end
 
+function IrGenerator:GetVariable(State, VariableName)
+  local IndexRegister = IrGenerator:ResolveLocal(State, VariableName)
+
+  if IndexRegister then
+    return IndexRegister
+  end
+
+  local VariableNameRegister = IrGenerator:ConvertStringToIr(State, VariableName)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  State.CurrentIr.Type = "GetVariable"
+  State.CurrentIr.Arguments = {
+    [1] = VariableNameRegister,
+    [2] = ResultRegister,
+  }
+
+  IrGenerator:MarkNotUsed(State, VariableNameRegister)
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
 function IrGenerator:GenerateIr(State, Ast)
   State.CurrentIr = { Arguments = {} }
 
@@ -1445,16 +1467,7 @@ function IrGenerator:GenerateIr(State, Ast)
       IrGenerator:NewIr(State)
     end
 
-    local FunctionNameRegister = IrGenerator:ConvertStringToIr(State, Ast.Name)
-    local FunctionRegister = IrGenerator:AllocateRegister(State)
-
-    State.CurrentIr.Type = "GetVariable"
-    State.CurrentIr.Arguments = {
-      [1] = FunctionNameRegister,
-      [2] = FunctionRegister,
-    }
-    IrGenerator:MarkNotUsed(State, FunctionNameRegister)
-    IrGenerator:NewIr(State)
+    local FunctionRegister = IrGenerator:GetVariable(State, Ast.Name)
 
     State.CurrentIr.Type = "CallFromRegister"
     State.CurrentIr.Arguments = {
@@ -1548,25 +1561,7 @@ function IrGenerator:GenerateIr(State, Ast)
 
     return ResultRegister
   elseif Ast.Type == "Ident" then
-    local IndexRegister = IrGenerator:ResolveLocal(State, Ast.Value)
-
-    if IndexRegister then
-      return IndexRegister
-    end
-
-    local VariableNameRegister = IrGenerator:ConvertStringToIr(State, Ast.Value)
-    local ResultRegister = IrGenerator:AllocateRegister(State)
-
-    State.CurrentIr.Type = "GetVariable"
-    State.CurrentIr.Arguments = {
-      [1] = VariableNameRegister,
-      [2] = ResultRegister,
-    }
-
-    IrGenerator:MarkNotUsed(State, VariableNameRegister)
-    IrGenerator:NewIr(State)
-
-    return ResultRegister
+    return IrGenerator:GetVariable(State, Ast.Value)
   elseif Ast.Type == "Boolean" then
     local ResultRegister = IrGenerator:AllocateRegister(State)
     State.CurrentIr.Type = "LoadBoolean"
@@ -1886,6 +1881,26 @@ function IrGenerator:GenerateIr(State, Ast)
     end
 
     return TableRegister
+  elseif Ast.Type == "GetMember" then
+    local TableName = Ast.Table
+    local TableRegister = IrGenerator:GetVariable(State, TableName)
+    local ResultRegister = IrGenerator:AllocateRegister(State)
+
+    for _, MemberName in ipairs(Ast.Member) do
+      local MemberNameRegister = IrGenerator:ConvertStringToIr(State, MemberName)
+
+      State.CurrentIr.Type = "Index"
+      State.CurrentIr.Arguments = {
+        [1] = TableRegister,
+        [2] = MemberNameRegister,
+        [3] = ResultRegister,
+      }
+      IrGenerator:MarkNotUsed(State, MemberNameRegister)
+      IrGenerator:NewIr(State)
+    end
+
+    IrGenerator:MarkNotUsed(State, TableRegister)
+    return ResultRegister
   else
     Logger:Error(State, "Unhandled Ast type: %q", Ast.Type)
   end
@@ -2406,6 +2421,7 @@ function Vm:Execute(State)
     local TableRegister = Arguments.TableRegister
     local KeyRegister = Arguments.KeyRegister
     local ResultRegister = Arguments.ResultRegister
+    local Item = TableRegister.Value[KeyRegister.Value]
 
     if Item then
       ResultRegister.Type = Item.Type
