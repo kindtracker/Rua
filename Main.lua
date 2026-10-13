@@ -21,4 +21,5 @@ end
 
 State.ExitOnError = true
 
-Rua:Run(State, FileName)
+-- Or State.ErrorMessage
+local Result, Error = Rua:Run(State, FileName)

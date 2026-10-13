@@ -493,7 +493,8 @@ function Rua:Run(State, FileName)
 
   Rua:Tokenize(State)
   if State.Stop then
-    return
+    local ErrorMessage = State.ErrorMessage
+    return nil, ErrorMessage
   end
 
   if Rua.DevMode then
@@ -503,7 +504,8 @@ function Rua:Run(State, FileName)
 
   Rua:Parse(State)
   if State.Stop then
-    return
+    local ErrorMessage = State.ErrorMessage
+    return nil, ErrorMessage
   end
 
   if Rua.DevMode then
@@ -515,7 +517,8 @@ function Rua:Run(State, FileName)
 
   Rua:GenerateIr(State)
   if State.Stop then
-    return
+    local ErrorMessage = State.ErrorMessage
+    return nil, ErrorMessage
   end
 
   if Rua.DevMode then
@@ -525,7 +528,8 @@ function Rua:Run(State, FileName)
 
   Rua:GenerateLua(State)
   if State.Stop then
-    return
+    local ErrorMessage = State.ErrorMessage
+    return nil, ErrorMessage
   end
 
   if Rua.DevMode then
@@ -534,14 +538,17 @@ function Rua:Run(State, FileName)
 
   Rua:GenerateBytecode(State)
   if State.Stop then
-    return
+    local ErrorMessage = State.ErrorMessage
+    return nil, ErrorMessage
   end
 
   if Rua.DevMode then
     io.open("Dev.rua", "wb"):write(State.Bytecode.Program)
   end
 
-  Rua:Execute(State)
+  local Result = Rua:Execute(State)
+  local ErrorMessage = State.ErrorMessage
+  return Result, ErrorMessage
 end
 
 local Logger = {}
@@ -561,6 +568,8 @@ function Logger:Error(State, ...)
     Format = "%s: " .. Format
   end
 
+  State.ErrorMessage = string.format(...)
+
   if State.ShowFaultLine then
     io.write(
       string.format(
@@ -570,7 +579,7 @@ function Logger:Error(State, ...)
         State.Row,
         Ansi.Red,
         Ansi.Reset,
-        string.format(...),
+        State.ErrorMessage,
         HighlightedWord,
         string.rep(" ", WordStart),
         Ansi.Red,
@@ -2552,8 +2561,5 @@ Rua.Vm = Vm
 -- File -> Tokenizer -> Tokens -> Parser -> Ast ->
 -- Ir generator -> Ir -> BytecodeGenerator -> Bytecode ->
 -- Register-based Vm
-
--- TODO: add State.ExitOnError
--- TODO: add Second return to Rua:Run (Result, Error)
 
 return Rua
