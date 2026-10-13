@@ -1865,6 +1865,8 @@ function IrGenerator:GenerateIr(State, Ast)
       IrGenerator:MarkNotUsed(State, ValueRegister)
       IrGenerator:NewIr(State)
     end
+
+    return TableRegister
   else
     Logger:Error(State, "Unhandled Ast type: %q", Ast.Type)
   end
