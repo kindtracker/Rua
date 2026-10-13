@@ -919,24 +919,42 @@ function Parser:ParsePrimaryExpression(State)
       if Kind == nil then
         return nil
       end
-    elseif State.CurrentToken.Value == "." then
-      local MemberNames = {}
+    elseif TableHasString({ ".", "[" }, State.CurrentToken.Value) then
+      local Members = {}
 
-      while State.CurrentToken and State.CurrentToken.Value == "." do
-        Parser:Advance(State)
+      while TableHasString({ ".", "[" }, State.CurrentToken.Value) do
+        print("1", State.CurrentToken.Value)
+        if State.CurrentToken.Value == "." then
+          Parser:Advance(State)
 
-        if not State.CurrentToken or State.CurrentToken.Kind ~= "Ident" then
-          return nil
+          if State.CurrentToken.Kind ~= "Ident" then
+            return nil
+          end
+
+          table.insert(Members, State.CurrentToken.Value)
+          Parser:Advance(State)
+        elseif State.CurrentToken.Value == "[" then
+          Parser:Advance(State)
+
+          local Key = Parser:ParseExpression(State)
+          if Key == nil then
+            return nil
+          end
+
+          local Kind = Parser:Expect(State, "]")
+          if Kind == nil then
+            return nil
+          end
+
+          table.insert(Members, Key)
         end
-
-        table.insert(MemberNames, State.CurrentToken.Value)
-        Parser:Advance(State)
+        print("2", State.CurrentToken.Value)
       end
 
       Expression = {
         Type = "GetMember",
         Table = Expression.Value,
-        Member = MemberNames,
+        Member = Members,
       }
     end
 
@@ -1299,7 +1317,11 @@ function LuaGenerator:IrToLua(Ir, Tab)
     local Arguments = {}
 
     for _, Argument in ipairs(Ir.Arguments) do
-      table.insert(Arguments, string.format("%q", Argument))
+      if type(Argument) == "table" then
+        table.insert(Arguments, string.format("<Table>"))
+      else
+        table.insert(Arguments, string.format("%q", Argument))
+      end
     end
 
     return string.format("%sRuaRuntime:%s(%s)\n", Tab, Ir.Type, table.concat(Arguments, ", "))
@@ -1886,16 +1908,21 @@ function IrGenerator:GenerateIr(State, Ast)
     local TableRegister = IrGenerator:GetVariable(State, TableName)
     local ResultRegister = IrGenerator:AllocateRegister(State)
 
-    for MemberIndex, MemberName in ipairs(Ast.Member) do
-      local MemberNameRegister = IrGenerator:ConvertStringToIr(State, MemberName)
+    for MemberIndex, Member in ipairs(Ast.Member) do
+      local MemberRegister
+      if type(Member) == "string" then
+        MemberRegister = IrGenerator:ConvertStringToIr(State, Member)
+      else
+        MemberRegister = IrGenerator:GenerateIr(State, Member)
+      end
 
       State.CurrentIr.Type = "Index"
       State.CurrentIr.Arguments = {
         [1] = TableRegister,
-        [2] = MemberNameRegister,
+        [2] = MemberRegister,
         [3] = ResultRegister,
       }
-      IrGenerator:MarkNotUsed(State, MemberNameRegister)
+      IrGenerator:MarkNotUsed(State, MemberRegister)
       IrGenerator:NewIr(State)
 
       if #Ast.Member ~= MemberIndex then
