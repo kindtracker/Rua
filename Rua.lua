@@ -906,7 +906,7 @@ function Parser:ParsePrimaryExpression(State)
       Value = Token.Value,
     }
 
-    if State.CurrentToken and State.CurrentToken.Value == "(" then
+    if State.CurrentToken.Value == "(" then
       Parser:Advance(State)
 
       Expression = {
@@ -919,6 +919,25 @@ function Parser:ParsePrimaryExpression(State)
       if Kind == nil then
         return nil
       end
+    elseif State.CurrentToken.Value == "." then
+      local MemberNames = {}
+
+      while State.CurrentToken and State.CurrentToken.Value == "." do
+        Parser:Advance(State)
+
+        if not State.CurrentToken or State.CurrentToken.Kind ~= "Ident" then
+          return nil
+        end
+
+        table.insert(MemberNames, State.CurrentToken.Value)
+        Parser:Advance(State)
+      end
+
+      Expression = {
+        Type = "GetMember",
+        Object = Expression,
+        Member = MemberNames,
+      }
     end
 
     return Expression
