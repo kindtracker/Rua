@@ -594,6 +594,14 @@ function Logger:Error(State, ...)
       )
     )
   end
+
+  if State.ExitOnError then
+    if os.exit then
+      os.exit(1)
+    else
+      assert(false, "")
+    end
+  end
 end
 
 local Tokenizer = {}
