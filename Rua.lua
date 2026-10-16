@@ -899,6 +899,46 @@ function Parser:GetExpressionPrecedence(State)
   return ExpressionPrecedence[State.CurrentToken.Value]
 end
 
+function Parser:ParseMember(State)
+  local TableName = State.CurrentToken.Value
+  local Members = {}
+
+  Parser:Advance(State)
+
+  while TableHasString({ ".", "[" }, State.CurrentToken.Value) do
+    if State.CurrentToken.Value == "." then
+      Parser:Advance(State)
+
+      if State.CurrentToken.Kind ~= "Ident" then
+        return nil
+      end
+
+      table.insert(Members, State.CurrentToken.Value)
+      Parser:Advance(State)
+    elseif State.CurrentToken.Value == "[" then
+      Parser:Advance(State)
+
+      local Key = Parser:ParseExpression(State)
+      if Key == nil then
+        return nil
+      end
+
+      local Kind = Parser:Expect(State, "]")
+      if Kind == nil then
+        return nil
+      end
+
+      table.insert(Members, Key)
+    end
+  end
+
+  return {
+    Type = "GetMember",
+    Table = TableName,
+    Member = Members,
+  }
+end
+
 function Parser:ParsePrimaryExpression(State)
   if State.CurrentToken == nil then
     return nil
@@ -937,42 +977,8 @@ function Parser:ParsePrimaryExpression(State)
         return nil
       end
     elseif TableHasString({ ".", "[" }, State.CurrentToken.Value) then
-      local Members = {}
-
-      while TableHasString({ ".", "[" }, State.CurrentToken.Value) do
-        print("1", State.CurrentToken.Value)
-        if State.CurrentToken.Value == "." then
-          Parser:Advance(State)
-
-          if State.CurrentToken.Kind ~= "Ident" then
-            return nil
-          end
-
-          table.insert(Members, State.CurrentToken.Value)
-          Parser:Advance(State)
-        elseif State.CurrentToken.Value == "[" then
-          Parser:Advance(State)
-
-          local Key = Parser:ParseExpression(State)
-          if Key == nil then
-            return nil
-          end
-
-          local Kind = Parser:Expect(State, "]")
-          if Kind == nil then
-            return nil
-          end
-
-          table.insert(Members, Key)
-        end
-        print("2", State.CurrentToken.Value)
-      end
-
-      Expression = {
-        Type = "GetMember",
-        Table = Expression.Value,
-        Member = Members,
-      }
+      Parser:Advance(State, -1)
+      Expression = Parser:ParseMember(State)
     end
 
     return Expression
@@ -1139,9 +1145,8 @@ end
 function Parser:ParseArgumentList(State)
   local ArgumentList = {}
 
-  local Argument
   while true do
-    ArgumentNode = Parser:ParseExpression(State)
+    local ArgumentNode = Parser:ParseExpression(State)
     table.insert(ArgumentList, ArgumentNode)
 
     if State.CurrentToken.Value ~= "," then
@@ -1178,8 +1183,8 @@ end
 
 function Parser:ParseFunctionCall(State, Statement)
   Statement.Type = "FunctionCall"
-  Statement.Name = State.CurrentToken.Value
-  Parser:Advance(State, 2)
+  Statement.Name = Parser:ParseMember(State)
+  Parser:Advance(State)
   Statement.Arguments = Parser:ParseArgumentList(State)
 
   Kind, Value = Parser:Expect(State, ")")
@@ -1197,9 +1202,11 @@ end
 
 function Parser:ParseFunction(State, Statement)
   Statement.Type = "Function"
-  Statement.Name = State.CurrentToken.Value
+  Statement.Name = Parser:ParseMember(State)
+
   Parser:Advance(State)
   Statement.Arguments = Parser:ParseArgumentList(State)
+  Parser:Advance(State)
   Statement.Body = Parser:ParseBlock(State, "end")
 end
 
@@ -1268,6 +1275,15 @@ function Parser:ParseStatement(State, IsLocal)
     Kind, Value = Parser:Expect(State, "Punct", "Operator")
     if Kind == nil then
       return
+    end
+
+    if Value == "." or Value == "[" then
+      Parser:Advance(State, -1)
+      Parser:ParseMember(State)
+
+      Parser:Advance(State)
+      Value = State.CurrentToken.Value
+      Parser:Advance(State, -1)
     end
 
     if Value == "(" then
@@ -1399,6 +1415,10 @@ function IrGenerator:GenerateBlock(State, Body)
 end
 
 function IrGenerator:ConvertStringToIr(State, String)
+  if type(String) ~= "string" then
+    return IrGenerator:GenerateIr(State, String)
+  end
+
   local ResultRegister = IrGenerator:GenerateIr(State, {
     Type = "String",
     Value = String,
@@ -1467,6 +1487,18 @@ function IrGenerator:GetVariable(State, VariableName)
 
   if IndexRegister then
     return IndexRegister
+  end
+
+  print(type(VariableName))
+  if type(VariableName) == "table" then
+    PrintTable(VariableName)
+    print()
+  else
+    print(VariableName)
+  end
+
+  if type(VariableName) == "table" then
+    return IrGenerator:GenerateIr(State, VariableName)
   end
 
   local VariableNameRegister = IrGenerator:ConvertStringToIr(State, VariableName)
