@@ -87,24 +87,24 @@ end
 ---@field Tokens table List of tokens generated from the source file, in the order they appear.
 ---@field Ast table Abstract syntax tree (AST) representing the structure of the parsed source code.
 ---@field File RuaFile Information about the source file currently being compiled.
----@field ExitOnError boolean
----@field ErrorMessage string
+---@field ExitOnError boolean Whether compilation should stop when an error occurs.
+---@field ErrorMessage string Error message associated with the current compilation failure.
 
 ---@class RuaFile
----@field Name string
+---@field Name string Name or path of the source file being compiled.
 ---@field Content string Complete text content of the source file being compiled.
----@field Row number
----@field Column number
+---@field Row number Current line number in the source file.
+---@field Column number Current column number in the source file.
 
 ---@class RuaTokenizer
----@field Reset function
----@field Advance function
----@field Tokenize function
----@field Index integer
----@field Character string
+---@field Reset function Resets the tokenizer's state before tokenization.
+---@field Advance function Advances through the source file by a specified number of characters.
+---@field Tokenize function Converts source code into a sequence of tokens.
+---@field Index integer Current character index in the source file.
+---@field Character string Character currently being examined by the tokenizer.
 
 ---@class RuaLogger
----@field Error function
+---@field Error function Reports a compilation error with its type and message.
 
 ---@return RuaState State A new compiler state containing an initialized tokenizer, parser, token list, and AST.
 function Rua.new()
@@ -124,11 +124,11 @@ function Rua.new()
 end
 
 ---@class AnsiTable
----@field Reset string
----@field Yellow string
----@field Red string
----@field RuaRed string
----@field LuaBlue string
+---@field Reset string ANSI escape sequence that resets terminal text formatting to its default.
+---@field Yellow string ANSI escape sequence for yellow terminal text.
+---@field Red string ANSI escape sequence for red terminal text.
+---@field RuaRed string ANSI escape sequence for Rua's custom red terminal text color.
+---@field LuaBlue string ANSI escape sequence for blue terminal text associated with Lua.
 
 local Ansi = {
   Reset = "\27[0m",
@@ -141,10 +141,10 @@ local Ansi = {
 ---@type RuaLogger
 local Logger = {}
 
----@param State RuaState
----@param ErrorType string
----@param ErrorMessageFormat string
----@return ErrorMessage string
+---@param State RuaState Rua compiler state.
+---@param ErrorType string Type or category of the error being reported.
+---@param ErrorMessageFormat string Format string used to construct the error message.
+---@return ErrorMessage string Formatted error message containing the source location, error type, and description.
 function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
   local Format = "%sRua:%s %s:%d:%d: %sError:%s %s: %s\n"
 
@@ -201,7 +201,7 @@ function Tokenizer:Reset(State)
 end
 
 ---@param State RuaState Rua compiler state.
----@param Step? number
+---@param Step? number Number of characters to advance through the source file (defaults to 1).
 function Tokenizer:Advance(State, Step)
   Step = Step or 1
 
