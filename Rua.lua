@@ -139,8 +139,9 @@ function Tokenizer:Tokenize(State)
 
       local EndIndex = Tokenizer.Index - 1
       local Ident = State.File.Content:sub(StartIndex, EndIndex)
+      local Type = TableHasString(BaseKeywords, Ident) and "Keyword" or "Ident"
       Tokenizer.Token = {
-        Type = "Ident",
+        Type = Type,
         Value = Ident,
       }
       Tokenizer:NewToken(State)
