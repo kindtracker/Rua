@@ -78,9 +78,14 @@ end
 ---@field Tokens table List of tokens generated from the source file, in the order they appear.
 ---@field Ast table Abstract syntax tree (AST) representing the structure of the parsed source code.
 ---@field File RuaFile Information about the source file currently being compiled.
+---@field ExitOnError boolean
+---@field ErrorMessage string
 
 ---@class RuaFile
+---@field Name string
 ---@field Content string Complete text content of the source file being compiled.
+---@field Row number
+---@field Column number
 
 ---@class RuaTokenizer
 ---@field Reset function
@@ -88,6 +93,9 @@ end
 ---@field Tokenize function
 ---@field Index integer
 ---@field Character string
+
+---@class RuaLogger
+---@field Error function
 
 ---@return RuaState State A new compiler state containing an initialized tokenizer, parser, token list, and AST.
 function Rua.new()
@@ -106,6 +114,72 @@ function Rua.new()
   }
 end
 
+---@class AnsiTable
+---@field Reset string
+---@field Yellow string
+---@field Red string
+---@field RuaRed string
+---@field LuaBlue string
+
+local Ansi = {
+  Reset = "\27[0m",
+  Yellow = "\27[33m",
+  Red = "\27[31m",
+  RuaRed = "\27[38;2;255;100;100m",
+  LuaBlue = "\27[38;2;100;200;255m",
+}
+
+---@type RuaLogger
+local Logger = {}
+
+---@param State RuaState
+---@param ErrorType string
+---@param ErrorMessageFormat string
+---@return ErrorMessage string
+function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
+  local Format = "%sRua:%s %s:%d:%d: %sError:%s %s: %s\n"
+
+  State.ErrorMessage = string.format(ErrorMessageFormat, ...)
+
+  io.write(
+    string.format(
+      Format,
+      Ansi.RuaRed,
+      Ansi.Reset,
+      State.File.Name,
+      State.File.Row,
+      State.File.Column,
+      Ansi.Red,
+      Ansi.Reset,
+      ErrorType,
+      State.ErrorMessage
+    )
+  )
+
+  State.Stop = true
+
+  if Rua.DevMode then
+    io.write(
+      string.format(
+        "%sLua:%s traceback:\n%s\n",
+        Ansi.LuaBlue,
+        Ansi.Reset,
+        debug.traceback():gsub("stack traceback:\n", ""):gsub("	", "   ")
+      )
+    )
+  end
+
+  if State.ExitOnError then
+    if os.exit then
+      os.exit(1)
+    else
+      assert(false, "")
+    end
+  end
+
+  return State.ErrorMessage
+end
+
 ---@type RuaTokenizer
 local Tokenizer = {}
 
@@ -113,6 +187,8 @@ local Tokenizer = {}
 function Tokenizer:Reset(State)
   Tokenizer.Index = 0
   Tokenizer.Character = ""
+  State.File.Row = 1
+  State.File.Column = 0
 end
 
 ---@param State RuaState Rua compiler state.
@@ -120,9 +196,20 @@ end
 function Tokenizer:Advance(State, Step)
   Step = Step or 1
 
-  local Index = Tokenizer.Index + Step
-  Tokenizer.Character = State.File.Content:sub(Index, Index)
-  Tokenizer.Index = Index
+  for _ = 1, Step do
+    local Index = Tokenizer.Index + 1
+    local Character = State.File.Content:sub(Index, Index)
+
+    Tokenizer.Index = Index
+    Tokenizer.Character = Character
+
+    if Character == "\n" then
+      State.File.Row = State.File.Row + 1
+      State.File.Column = 0
+    else
+      State.File.Column = State.File.Column + 1
+    end
+  end
 end
 
 ---@param State RuaState Rua compiler state.
@@ -160,7 +247,7 @@ function Tokenizer:Tokenize(State)
     elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
       local StartIndex = Tokenizer.Index
 
-      while StringHasLetter(BaseDigits, Tokenizer.Digits) do
+      while StringHasLetter(BaseDigits, Tokenizer.Character) do
         Tokenizer:Advance(State)
       end
 
@@ -190,9 +277,21 @@ function Tokenizer:Tokenize(State)
       Tokenizer:NewToken(State)
       Tokenizer:Advance(State)
     elseif StringHasLetter(BaseOperators, Tokenizer.Character) then
+      local IsComment, IsMultipleLineComment = false, false
       local Operator = Tokenizer.Character
+
       Tokenizer:Advance(State)
-      if TableHasString({ "=", "~", ">", "<", "|" }, Operator) then
+      if Tokenizer.Character == "-" then
+        IsComment = true
+        Tokenizer:Advance(State)
+        if Tokenizer.Character == "[" then
+          Tokenizer:Advance(State)
+          if Tokenizer.Character == "[" then
+            Tokenizer:Advance(State)
+            IsMultipleLineComment = true
+          end
+        end
+      elseif TableHasString({ "=", "~", ">", "<", "|" }, Operator) then
         if Tokenizer.Character == "=" then
           Operator = Operator .. "="
           Tokenizer:Advance(State)
@@ -202,18 +301,38 @@ function Tokenizer:Tokenize(State)
         end
       end
 
-      Tokenizer.Token = {
-        Type = "Operator",
-        Value = Operator,
-      }
-      Tokenizer:NewToken(State)
-      Tokenizer:Advance(State)
+      if IsComment then
+        while true do
+          if not IsMultipleLineComment then
+            if Tokenizer.Character == "\n" then
+              break
+            end
+          else
+            if Tokenizer.Character == "]" then
+              Tokenizer:Advance(State)
+              if Tokenizer.Character == "]" then
+                Tokenizer:Advance(State)
+                break
+              end
+            end
+          end
+
+          Tokenizer:Advance(State)
+        end
+      else
+        Tokenizer.Token = {
+          Type = "Operator",
+          Value = Operator,
+        }
+        Tokenizer:NewToken(State)
+        Tokenizer:Advance(State)
+      end
     elseif StringHasLetter(WhiteSpace, Tokenizer.Character) then
       Tokenizer:Advance(State)
     elseif #Tokenizer.Character == 0 then
       break
     else
-      print(string.format("Unknown token: %s", Tokenizer.Character))
+      Logger:Error(State, "SyntaxError", "Unexpected character: %s", Tokenizer.Character)
       break
     end
   end
@@ -237,6 +356,7 @@ function Rua:Run(State, FileName)
     return nil, Error
   end
   State.File.Content = FilePtr:read("*a")
+  State.File.Name = FileName
   FilePtr:close()
 
   Rua:Tokenize(State)
