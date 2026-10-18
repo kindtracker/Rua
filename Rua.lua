@@ -322,6 +322,10 @@ function Tokenizer:ParseString(State)
       String = String .. Tokenizer.Character
     end
 
+    if #Tokenizer.Character == 0 then
+      Logger:Error(State, "SyntaxError", "Unterminated string")
+    end
+
     Tokenizer:Advance(State)
   end
 
