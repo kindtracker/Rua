@@ -145,6 +145,45 @@ function Tokenizer:Tokenize(State)
         Value = Ident,
       }
       Tokenizer:NewToken(State)
+    elseif StringHasLetter(BasePunct, Tokenizer.Character) then
+      Tokenizer.Token = {
+        Type = "Punct",
+        Value = Tokenizer.Character,
+      }
+      Tokenizer:NewToken(State)
+      Tokenizer:Advance(State)
+    elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
+      local StartIndex = Tokenizer.Index
+
+      while StringHasLetter(BaseDigits, Tokenizer.Digits) do
+        Tokenizer:Advance(State)
+      end
+
+      local EndIndex = Tokenizer.Index - 1
+      local Number = State.File.Content:sub(StartIndex, EndIndex)
+      Number = tonumber(Number)
+      Tokenizer.Token = {
+        Type = Type,
+        Value = Number,
+      }
+      Tokenizer:NewToken(State)
+    elseif Tokenizer.Character == '"' or Tokenizer.Character == "'" then
+      local StringCharacter = Tokenizer.Character
+      local StartIndex = Tokenizer.Index
+
+      Tokenizer:Advance(State)
+      while Tokenizer.Character ~= StringCharacter do
+        Tokenizer:Advance(State)
+      end
+
+      local EndIndex = Tokenizer.Index - 1
+      local String = State.File.Content:sub(StartIndex, EndIndex)
+      Tokenizer.Token = {
+        Type = "String",
+        Value = String,
+      }
+      Tokenizer:NewToken(State)
+      Tokenizer:Advance(State)
     else
       print(string.format("Unknown token: %s", Tokenizer.Character))
       break
