@@ -31,10 +31,12 @@ local BaseKeywords = {
   "while",
 }
 
+local WhiteSpace = "\n\t\r "
+
 ---@param Table table Table to search through.
 ---@param Value string String value to look for in the table.
 ---@return boolean Whether the table contains the specified string.
-function TableHasString(Table, Value)
+local function TableHasString(Table, Value)
   for _, Item in pairs(Table) do
     if type(Item) == "string" and Item == Value then
       return true
@@ -47,8 +49,8 @@ end
 ---@param String string String to search through.
 ---@param Letter string Letter or substring to look for.
 ---@return boolean Whether the string contains the specified letter or substring.
-function StringHasLetter(String, Letter)
-  return string.find(String, Letter, 1, true) ~= nil
+local function StringHasLetter(String, Letter)
+  return Letter ~= "" and string.find(String, Letter, 1, true) ~= nil
 end
 
 ---@param Value table Table to print.
@@ -169,9 +171,9 @@ function Tokenizer:Tokenize(State)
       Tokenizer:NewToken(State)
     elseif Tokenizer.Character == '"' or Tokenizer.Character == "'" then
       local StringCharacter = Tokenizer.Character
+      Tokenizer:Advance(State)
       local StartIndex = Tokenizer.Index
 
-      Tokenizer:Advance(State)
       while Tokenizer.Character ~= StringCharacter do
         Tokenizer:Advance(State)
       end
@@ -184,6 +186,10 @@ function Tokenizer:Tokenize(State)
       }
       Tokenizer:NewToken(State)
       Tokenizer:Advance(State)
+    elseif StringHasLetter(WhiteSpace, Tokenizer.Character) then
+      Tokenizer:Advance(State)
+    elseif #Tokenizer.Character == 0 then
+      break
     else
       print(string.format("Unknown token: %s", Tokenizer.Character))
       break
