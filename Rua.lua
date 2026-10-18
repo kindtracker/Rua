@@ -7,7 +7,6 @@ local BaseIdent = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 local BasePunct = "(){}[];,:."
 local BaseDigits = "0123456789"
 local BaseOperators = "=<>~&|+-*/^%#"
-local BaseEscape = ""
 
 local BaseKeywords = {
   "and",
@@ -29,6 +28,16 @@ local BaseKeywords = {
   "then",
   "until",
   "while",
+}
+
+local BaseEscapes = {
+  ["n"] = "\n",
+  ["t"] = "\t",
+  ["r"] = "\r",
+  ["\\"] = "\\",
+  ['"'] = '"',
+  ["'"] = "'",
+  ["0"] = "\0",
 }
 
 local WhiteSpace = "\n\t\r "
@@ -225,7 +234,7 @@ function Tokenizer:Tokenize(State)
     if StringHasLetter(BaseIdent, Tokenizer.Character) then
       local StartIndex = Tokenizer.Index
 
-      while StringHasLetter(BaseIdent, Tokenizer.Character) do
+      while StringHasLetter(BaseIdent, Tokenizer.Character) or StringHasLetter(BaseDigits, Tokenizer.Character) do
         Tokenizer:Advance(State)
       end
 
@@ -261,15 +270,35 @@ function Tokenizer:Tokenize(State)
       Tokenizer:NewToken(State)
     elseif Tokenizer.Character == '"' or Tokenizer.Character == "'" then
       local StringCharacter = Tokenizer.Character
-      Tokenizer:Advance(State)
-      local StartIndex = Tokenizer.Index
+      local String = ""
 
+      Tokenizer:Advance(State)
       while Tokenizer.Character ~= StringCharacter do
+        if #Tokenizer.Character == 0 then
+          Logger:Error(State, "SyntaxError", "Unterminated string")
+          return
+        elseif Tokenizer.Character == "\\" then
+          Tokenizer:Advance(State)
+
+          if Tokenizer.Character == "" then
+            Logger:Error(State, "SyntaxError", "Unterminated escape sequence")
+            return
+          end
+
+          local Escape = BaseEscapes[Tokenizer.Character]
+          if Escape ~= nil then
+            String = String .. Escape
+          else
+            Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
+            return
+          end
+        else
+          String = String .. Tokenizer.Character
+        end
+
         Tokenizer:Advance(State)
       end
 
-      local EndIndex = Tokenizer.Index - 1
-      local String = State.File.Content:sub(StartIndex, EndIndex)
       Tokenizer.Token = {
         Type = "String",
         Value = String,
