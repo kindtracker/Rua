@@ -15,5 +15,4 @@ if FileName == nil then
   return
 end
 
--- Or State.ErrorMessage
 local Result, Error = Rua:Run(State, FileName)
