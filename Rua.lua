@@ -116,8 +116,11 @@ function Tokenizer:Reset(State)
 end
 
 ---@param State RuaState Rua compiler state.
-function Tokenizer:Advance(State)
-  local Index = Tokenizer.Index + 1
+---@param Step? number
+function Tokenizer:Advance(State, Step)
+  Step = Step or 1
+
+  local Index = Tokenizer.Index + Step
   Tokenizer.Character = State.File.Content:sub(Index, Index)
   Tokenizer.Index = Index
 end
@@ -183,6 +186,25 @@ function Tokenizer:Tokenize(State)
       Tokenizer.Token = {
         Type = "String",
         Value = String,
+      }
+      Tokenizer:NewToken(State)
+      Tokenizer:Advance(State)
+    elseif StringHasLetter(BaseOperators, Tokenizer.Character) then
+      local Operator = Tokenizer.Character
+      Tokenizer:Advance(State)
+      if TableHasString({ "=", "~", ">", "<", "|" }, Operator) then
+        if Tokenizer.Character == "=" then
+          Operator = Operator .. "="
+          Tokenizer:Advance(State)
+        elseif TableHasString({ ">", "<" }, Tokenizer.Character) then
+          Operator = Operator .. "="
+          Tokenizer:Advance(State)
+        end
+      end
+
+      Tokenizer.Token = {
+        Type = "Operator",
+        Value = Operator,
       }
       Tokenizer:NewToken(State)
       Tokenizer:Advance(State)
