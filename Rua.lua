@@ -228,141 +228,192 @@ function Tokenizer:NewToken(State)
 end
 
 ---@param State RuaState Rua compiler state.
+function Tokenizer:ParseIdent(State)
+  local StartIndex = Tokenizer.Index
+
+  while StringHasLetter(BaseIdent, Tokenizer.Character) or StringHasLetter(BaseDigits, Tokenizer.Character) do
+    Tokenizer:Advance(State)
+  end
+
+  local EndIndex = Tokenizer.Index - 1
+  local Ident = State.File.Content:sub(StartIndex, EndIndex)
+  local Type = TableHasString(BaseKeywords, Ident) and "Keyword" or "Ident"
+
+  Tokenizer.Token = {
+    Type = Type,
+    Value = Ident,
+  }
+
+  Tokenizer:NewToken(State)
+end
+
+---@param State RuaState Rua compiler state.
+function Tokenizer:ParsePunct(State)
+  Tokenizer.Token = {
+    Type = "Punct",
+    Value = Tokenizer.Character,
+  }
+
+  Tokenizer:NewToken(State)
+  Tokenizer:Advance(State)
+end
+
+---@param State RuaState Rua compiler state.
+function Tokenizer:ParseNumber(State)
+  local StartIndex = Tokenizer.Index
+  local FirstDigit = true
+  local Base = 10
+
+  while StringHasLetter(BaseDigits, Tokenizer.Character) or Tokenizer.Character == "." do
+    Tokenizer:Advance(State)
+
+    if FirstDigit and TableHasString({ "x", "b" }, Tokenizer.Character) then
+      Base = Tokenizer.Character == "x" and 16 or 2
+      StartIndex = StartIndex + 2
+      Tokenizer:Advance(State)
+    end
+
+    FirstDigit = false
+  end
+
+  local EndIndex = Tokenizer.Index - 1
+  local Number = State.File.Content:sub(StartIndex, EndIndex)
+
+  if Number == nil then
+    Logger:Error(State, "SyntaxError", "Invalid number literal: %s", Number)
+  end
+
+  Tokenizer.Token = {
+    Type = "Number",
+    Value = tonumber(Number, Base),
+  }
+
+  Tokenizer:NewToken(State)
+end
+
+---@param State RuaState Rua compiler state.
+function Tokenizer:ParseString(State)
+  local StringCharacter = Tokenizer.Character
+  local String = ""
+
+  Tokenizer:Advance(State)
+
+  while Tokenizer.Character ~= StringCharacter do
+    if Tokenizer.Character == "" then
+      Logger:Error(State, "SyntaxError", "Unterminated string")
+      return
+    elseif Tokenizer.Character == "\\" then
+      Tokenizer:Advance(State)
+
+      if Tokenizer.Character == "" then
+        Logger:Error(State, "SyntaxError", "Unterminated escape sequence")
+        return
+      end
+
+      local Escape = BaseEscapes[Tokenizer.Character]
+
+      if Escape ~= nil then
+        String = String .. Escape
+      else
+        Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
+        return
+      end
+    else
+      String = String .. Tokenizer.Character
+    end
+
+    Tokenizer:Advance(State)
+  end
+
+  Tokenizer.Token = {
+    Type = "String",
+    Value = String,
+  }
+
+  Tokenizer:NewToken(State)
+  Tokenizer:Advance(State)
+end
+
+---@param State RuaState Rua compiler state.
+function Tokenizer:ParseOperator(State)
+  local IsComment, IsMultipleLineComment = false, false
+  local Operator = Tokenizer.Character
+
+  Tokenizer:Advance(State)
+
+  if Operator == "-" and Tokenizer.Character == "-" then
+    IsComment = true
+    Tokenizer:Advance(State)
+
+    if Tokenizer.Character == "[" then
+      Tokenizer:Advance(State)
+
+      if Tokenizer.Character == "[" then
+        Tokenizer:Advance(State)
+        IsMultipleLineComment = true
+      end
+    end
+  elseif TableHasString({ "=", "~", ">", "<", "|" }, Operator) then
+    if Tokenizer.Character == "=" then
+      Operator = Operator .. "="
+      Tokenizer:Advance(State)
+    elseif TableHasString({ ">", "<" }, Tokenizer.Character) then
+      Operator = Operator .. Tokenizer.Character
+      Tokenizer:Advance(State)
+    end
+  end
+
+  if IsComment then
+    while #Tokenizer.Character > 0 do
+      if not IsMultipleLineComment then
+        if Tokenizer.Character == "\n" then
+          break
+        end
+      elseif Tokenizer.Character == "]" then
+        Tokenizer:Advance(State)
+
+        if Tokenizer.Character == "]" then
+          Tokenizer:Advance(State)
+          break
+        end
+
+        goto continue
+      end
+
+      Tokenizer:Advance(State)
+
+      ::continue::
+    end
+  else
+    Tokenizer.Token = {
+      Type = "Operator",
+      Value = Operator,
+    }
+
+    Tokenizer:NewToken(State)
+  end
+end
+
+---@param State RuaState Rua compiler state.
 function Tokenizer:Tokenize(State)
   Tokenizer:Advance(State)
-  while true do
+
+  while #Tokenizer.Character > 0 do
     if StringHasLetter(BaseIdent, Tokenizer.Character) then
-      local StartIndex = Tokenizer.Index
-
-      while StringHasLetter(BaseIdent, Tokenizer.Character) or StringHasLetter(BaseDigits, Tokenizer.Character) do
-        Tokenizer:Advance(State)
-      end
-
-      local EndIndex = Tokenizer.Index - 1
-      local Ident = State.File.Content:sub(StartIndex, EndIndex)
-      local Type = TableHasString(BaseKeywords, Ident) and "Keyword" or "Ident"
-      Tokenizer.Token = {
-        Type = Type,
-        Value = Ident,
-      }
-      Tokenizer:NewToken(State)
+      Tokenizer:ParseIdent(State)
     elseif StringHasLetter(BasePunct, Tokenizer.Character) then
-      Tokenizer.Token = {
-        Type = "Punct",
-        Value = Tokenizer.Character,
-      }
-      Tokenizer:NewToken(State)
-      Tokenizer:Advance(State)
+      Tokenizer:ParsePunct(State)
     elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
-      local StartIndex = Tokenizer.Index
-
-      while StringHasLetter(BaseDigits, Tokenizer.Character) do
-        Tokenizer:Advance(State)
-      end
-
-      local EndIndex = Tokenizer.Index - 1
-      local Number = State.File.Content:sub(StartIndex, EndIndex)
-      Number = tonumber(Number)
-      Tokenizer.Token = {
-        Type = Type,
-        Value = Number,
-      }
-      Tokenizer:NewToken(State)
+      Tokenizer:ParseNumber(State)
     elseif Tokenizer.Character == '"' or Tokenizer.Character == "'" then
-      local StringCharacter = Tokenizer.Character
-      local String = ""
-
-      Tokenizer:Advance(State)
-      while Tokenizer.Character ~= StringCharacter do
-        if #Tokenizer.Character == 0 then
-          Logger:Error(State, "SyntaxError", "Unterminated string")
-          return
-        elseif Tokenizer.Character == "\\" then
-          Tokenizer:Advance(State)
-
-          if Tokenizer.Character == "" then
-            Logger:Error(State, "SyntaxError", "Unterminated escape sequence")
-            return
-          end
-
-          local Escape = BaseEscapes[Tokenizer.Character]
-          if Escape ~= nil then
-            String = String .. Escape
-          else
-            Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
-            return
-          end
-        else
-          String = String .. Tokenizer.Character
-        end
-
-        Tokenizer:Advance(State)
-      end
-
-      Tokenizer.Token = {
-        Type = "String",
-        Value = String,
-      }
-      Tokenizer:NewToken(State)
-      Tokenizer:Advance(State)
+      Tokenizer:ParseString(State)
     elseif StringHasLetter(BaseOperators, Tokenizer.Character) then
-      local IsComment, IsMultipleLineComment = false, false
-      local Operator = Tokenizer.Character
-
-      Tokenizer:Advance(State)
-      if Tokenizer.Character == "-" then
-        IsComment = true
-        Tokenizer:Advance(State)
-        if Tokenizer.Character == "[" then
-          Tokenizer:Advance(State)
-          if Tokenizer.Character == "[" then
-            Tokenizer:Advance(State)
-            IsMultipleLineComment = true
-          end
-        end
-      elseif TableHasString({ "=", "~", ">", "<", "|" }, Operator) then
-        if Tokenizer.Character == "=" then
-          Operator = Operator .. "="
-          Tokenizer:Advance(State)
-        elseif TableHasString({ ">", "<" }, Tokenizer.Character) then
-          Operator = Operator .. "="
-          Tokenizer:Advance(State)
-        end
-      end
-
-      if IsComment then
-        while true do
-          if not IsMultipleLineComment then
-            if Tokenizer.Character == "\n" then
-              break
-            end
-          else
-            if Tokenizer.Character == "]" then
-              Tokenizer:Advance(State)
-              if Tokenizer.Character == "]" then
-                Tokenizer:Advance(State)
-                break
-              end
-            end
-          end
-
-          Tokenizer:Advance(State)
-        end
-      else
-        Tokenizer.Token = {
-          Type = "Operator",
-          Value = Operator,
-        }
-        Tokenizer:NewToken(State)
-        Tokenizer:Advance(State)
-      end
+      Tokenizer:ParseOperator(State)
     elseif StringHasLetter(WhiteSpace, Tokenizer.Character) then
       Tokenizer:Advance(State)
-    elseif #Tokenizer.Character == 0 then
-      break
     else
       Logger:Error(State, "SyntaxError", "Unexpected character: %s", Tokenizer.Character)
-      break
+      return
     end
   end
 end
