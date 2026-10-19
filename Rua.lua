@@ -135,14 +135,18 @@ local function PrintTable(Value, Indent)
 
   for Key, Item in pairs(Value) do
     io.write(string.rep("  ", Indent))
-    io.write(tostring(Key) .. " = ")
+    io.write(string.format("%s = ", Key))
 
     if type(Item) == "table" then
       io.write("{\n")
       PrintTable(Item, Indent + 1)
       io.write(string.rep("  ", Indent) .. "}\n")
     else
-      io.write(tostring(Item) .. "\n")
+      if type(Item) == "string" then
+        io.write(string.format("%q\n", Item))
+      else
+        io.write(string.format("%s\n", Item))
+      end
     end
   end
 end
@@ -226,6 +230,9 @@ end
 
 ---@param State RuaState Rua compiler state.
 function Tokenizer:NewToken(State)
+  Tokenizer.Token.Row = State.File.Row
+  Tokenizer.Token.Column = State.File.Column
+
   table.insert(State.Tokens, Tokenizer.Token)
   Tokenizer.Token = {}
 end
@@ -317,6 +324,18 @@ function Tokenizer:ParseString(State)
 
       if Escape ~= nil then
         String = String .. Escape
+      elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
+        local StartIndex = Tokenizer.Index
+
+        while StringHasLetter(BaseDigits, Tokenizer.Character) do
+          Tokenizer:Advance(State)
+        end
+        local EndIndex = Tokenizer.Index - 1
+
+        local NumberString = State.File.Content:sub(StartIndex, EndIndex)
+        local Number = tonumber(NumberString)
+        local Character = string.char(Number)
+        String = String .. Character
       else
         Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
         return
