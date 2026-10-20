@@ -459,25 +459,38 @@ end
 ---@param Value string?
 ---@return RuaToken|nil
 function Parser:Expect(State, Kind, Value)
-  local Token = Parser.Token
-
   local ValidType = false
 
-  if Token then
-    if type(Kind) == "table" then
-      ValidType = TableHasString(Kind, Token.Kind)
-    else
-      ValidType = Token.Kind == Kind
-    end
+  if type(Kind) == "table" then
+    ValidType = TableHasString(Kind, Parser.Token.Kind)
+  else
+    ValidType = Parser.Token.Kind == Kind
   end
 
-  if not Token or not ValidType or (Value ~= nil and Token.Value ~= Value) then
-    Logger:Error(State, "SyntaxError", "Unexpected token '%s'", Token and Token.Value or "EOF")
+  if not ValidType or (Value ~= nil and Parser.Token.Value ~= Value) then
+    Logger:Error(State, "SyntaxError", "Unexpected token '%s'", Parser.Token.Value)
     return nil
   end
 
   Parser:Advance(State)
-  return Token
+  return Parser.Token
+end
+
+---@param State RuaState
+---@param ExpectedToken table
+---@return RuaToken|nil
+function Parser:CheckToken(State, ExpectedToken)
+  if not ExpectedToken.Value then
+    if Parser.Token.Kind == ExpectedToken.Kind then
+      return Parser.Token
+    end
+  else
+    if Parser.Token.Kind == ExpectedToken.Kind and Parser.Token.Value == ExpectedToken.Value then
+      return Parser.Token
+    end
+  end
+
+  return nil
 end
 
 ---@param State RuaState
@@ -518,13 +531,18 @@ function Parser:ParseStatement(State)
   local Statement = {}
   local StartIndex = Parser.Index
 
-  if Parser.Token.Kind == "Ident" then
+  if Parser:CheckToken(State, {
+    Kind = "Ident",
+  }) then
     Parser:Advance(State)
 
-    if not Parser:Expect(State, "Punct", "(") then
+    if not Parser:CheckToken(State, {
+      Kind = "Punct",
+      Value = "(",
+    }) then
+      Logger:Error(State, "SyntaxError", "Expected '(' after Identifier but got '%s'", Parser.Token.Value)
       return
     end
-    Parser:Advance(State, -1)
 
     if Parser.Token.Value == "(" then
       Parser.Index = StartIndex
