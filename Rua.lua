@@ -46,7 +46,7 @@ local Rua = {}
 ---@field Column number Current column number in the source file.
 
 ---@class RuaToken
----@field Type string
+---@field Kind string
 ---@field Value string|number
 ---@field Column number
 ---@field Row number
@@ -257,10 +257,10 @@ function Tokenizer:ParseIdent(State)
 
   local EndIndex = Tokenizer.Index - 1
   local Ident = State.File.Content:sub(StartIndex, EndIndex)
-  local Type = TableHasString(BaseKeywords, Ident) and "Keyword" or "Ident"
+  local Kind = TableHasString(BaseKeywords, Ident) and "Keyword" or "Ident"
 
   Tokenizer.Token = {
-    Type = Type,
+    Kind = Kind,
     Value = Ident,
   }
 
@@ -270,7 +270,7 @@ end
 ---@param State RuaState Rua compiler state.
 function Tokenizer:ParsePunct(State)
   Tokenizer.Token = {
-    Type = "Punct",
+    Kind = "Punct",
     Value = Tokenizer.Character,
   }
 
@@ -304,7 +304,7 @@ function Tokenizer:ParseNumber(State)
   end
 
   Tokenizer.Token = {
-    Type = "Number",
+    Kind = "Number",
     Value = tonumber(Number, Base),
   }
 
@@ -362,7 +362,7 @@ function Tokenizer:ParseString(State)
   end
 
   Tokenizer.Token = {
-    Type = "String",
+    Kind = "String",
     Value = String,
   }
 
@@ -422,7 +422,7 @@ function Tokenizer:ParseOperator(State)
     end
   else
     Tokenizer.Token = {
-      Type = "Operator",
+      Kind = "Operator",
       Value = Operator,
     }
 
@@ -455,19 +455,19 @@ function Tokenizer:Tokenize(State)
 end
 
 ---@param State RuaState
----@param Type string|string[]
+---@param Kind string|string[]
 ---@param Value string?
 ---@return RuaToken|nil
-function Parser:Expect(State, Type, Value)
+function Parser:Expect(State, Kind, Value)
   local Token = Parser.Token
 
   local ValidType = false
 
   if Token then
-    if type(Type) == "table" then
-      ValidType = TableHasString(Type, Token.Type)
+    if type(Kind) == "table" then
+      ValidType = TableHasString(Kind, Token.Kind)
     else
-      ValidType = Token.Type == Type
+      ValidType = Token.Kind == Kind
     end
   end
 
@@ -502,7 +502,7 @@ function Parser:ParseFunctionCall(State, Statement)
   while true do
     Parser:Advance(State)
 
-    if Parser.Token.Type == "Punct" and Parser.Token.Value == ")" then
+    if Parser.Token.Kind == "Punct" and Parser.Token.Value == ")" then
       break
     end
 
@@ -518,7 +518,7 @@ function Parser:ParseStatement(State)
   local Statement = {}
   local StartIndex = Parser.Index
 
-  if Parser.Token.Type == "Ident" then
+  if Parser.Token.Kind == "Ident" then
     Parser:Advance(State)
 
     if not Parser:Expect(State, "Punct", "(") then
