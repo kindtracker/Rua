@@ -21,12 +21,6 @@ local Rua = {}
 ---@field ExitOnError boolean Whether compilation should stop when an error occurs.
 ---@field ErrorMessage string Error message associated with the current compilation failure.
 
----@class RuaFile
----@field Name string Name or path of the source file being compiled.
----@field Content string Complete text content of the source file being compiled.
----@field Row number Current line number in the source file.
----@field Column number Current column number in the source file.
-
 ---@class RuaLogger
 ---@field Error function Reports a compilation error with its type and message.
 
@@ -39,7 +33,23 @@ local Rua = {}
 
 ---@class RuaParser
 ---@field ParseFunctionCall function
----@field Parser function
+---@field Advance function
+---@field Reset function
+---@field Parse function
+---@field Token RuaToken
+---@field Index integer
+
+---@class RuaFile
+---@field Name string Name or path of the source file being compiled.
+---@field Content string Complete text content of the source file being compiled.
+---@field Row number Current line number in the source file.
+---@field Column number Current column number in the source file.
+
+---@class RuaToken
+---@field Type string
+---@field Value string|number
+---@field Column number
+---@field Row number
 
 ---@class RuaStatement
 ---@field Kind string
@@ -445,14 +455,75 @@ function Tokenizer:Tokenize(State)
 end
 
 ---@param State RuaState
-function Parser:Advance(State, Statement) end
+---@param Step number?
+function Parser:Advance(State, Step)
+  Step = Step or 1
+
+  local NextIndex = Parser.Index + Step
+  local Token = State.Tokens[NextIndex]
+  Parser.Token = Token
+  Parser.Index = NextIndex
+end
 
 ---@param State RuaState
 ---@param Statement RuaStatement
-function Parser:ParseFunctionCall(State, Statement) end
+function Parser:ParseFunctionCall(State, Statement)
+  Statement.Kind = "FunctionCall"
+  Statement.Name = Parser.Token.Value
+  Parser:Advance(State)
+
+  Statement.Arguments = {}
+  while true do
+    Parser:Advance(State)
+
+    if Parser.Token.Value == ")" then
+      break
+    end
+
+    local Argument = Parser.Token.Value
+    table.insert(Statement.Arguments, Argument)
+  end
+  Parser:Advance(State)
+end
 
 ---@param State RuaState
-function Parser:Parse(State) end
+---@return RuaStatement
+function Parser:ParseStatement(State)
+  local Statement = {}
+  local StartIndex = Parser.Index
+
+  if Parser.Token.Type == "Ident" then
+    Parser:Advance(State)
+
+    if Parser.Token.Type ~= "Punct" then
+      return
+    end
+
+    if Parser.Token.Value == "(" then
+      Parser.Index = StartIndex
+      Parser.Token = State.Tokens[StartIndex]
+      Parser:ParseFunctionCall(State, Statement)
+    end
+  end
+
+  return Statement
+end
+
+---@param State RuaState
+function Parser:Reset(State)
+  Parser.Token = nil
+  Parser.Index = 1
+end
+
+---@param State RuaState
+function Parser:Parse(State)
+  Parser:Advance(State, 0)
+
+  while Parser.Token ~= nil do
+    local Statement = Parser:ParseStatement(State)
+    table.insert(State.Ast, Statement)
+  end
+end
 
 ---@param State RuaState Rua compiler state containing the tokenizer, parser, tokens, and AST.
 function Rua:Tokenize(State)
@@ -477,7 +548,9 @@ function Rua.new()
       Character = "",
       Token = {},
     },
-    Parser = {},
+    Parser = {
+      Token = {},
+    },
     Tokens = {},
     Ast = {},
   }
@@ -502,7 +575,7 @@ function Rua:Run(State, FileName)
   PrintTable(State.Tokens)
 
   Rua:Parse(State)
-  PrintTable(State.Tokens)
+  PrintTable(State.Ast)
 
   return nil, nil
 end
