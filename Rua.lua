@@ -502,7 +502,7 @@ function Parser:ParseFunctionCall(State, Statement)
   while true do
     Parser:Advance(State)
 
-    if Parser.Token.Value == ")" then
+    if Parser.Token.Type == "Punct" and Parser.Token.Value == ")" then
       break
     end
 
@@ -521,16 +521,14 @@ function Parser:ParseStatement(State)
   if Parser.Token.Type == "Ident" then
     Parser:Advance(State)
 
-    if not Parser:Expect(State, "Type:Punct", "(") then
-      print("d", Parser.Token.Type)
+    if not Parser:Expect(State, "Punct", "(") then
       return
     end
+    Parser:Advance(State, -1)
 
-    print(":D", Parser.Token.Value)
     if Parser.Token.Value == "(" then
       Parser.Index = StartIndex
       Parser.Token = State.Tokens[StartIndex]
-      print("dd")
       Parser:ParseFunctionCall(State, Statement)
       return Statement
     end
