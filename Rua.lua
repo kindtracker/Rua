@@ -455,6 +455,32 @@ function Tokenizer:Tokenize(State)
 end
 
 ---@param State RuaState
+---@param Type string|string[]
+---@param Value string?
+---@return RuaToken|nil
+function Parser:Expect(State, Type, Value)
+  local Token = Parser.Token
+
+  local ValidType = false
+
+  if Token then
+    if type(Type) == "table" then
+      ValidType = TableHasString(Type, Token.Type)
+    else
+      ValidType = Token.Type == Type
+    end
+  end
+
+  if not Token or not ValidType or (Value ~= nil and Token.Value ~= Value) then
+    Logger:Error(State, "SyntaxError", "Unexpected token '%s'", Token and Token.Value or "EOF")
+    return nil
+  end
+
+  Parser:Advance(State)
+  return Token
+end
+
+---@param State RuaState
 ---@param Step number?
 function Parser:Advance(State, Step)
   Step = Step or 1
@@ -495,18 +521,22 @@ function Parser:ParseStatement(State)
   if Parser.Token.Type == "Ident" then
     Parser:Advance(State)
 
-    if Parser.Token.Type ~= "Punct" then
+    if not Parser:Expect(State, "Type:Punct", "(") then
+      print("d", Parser.Token.Type)
       return
     end
 
+    print(":D", Parser.Token.Value)
     if Parser.Token.Value == "(" then
       Parser.Index = StartIndex
       Parser.Token = State.Tokens[StartIndex]
+      print("dd")
       Parser:ParseFunctionCall(State, Statement)
+      return Statement
     end
   end
 
-  return Statement
+  return {}
 end
 
 ---@param State RuaState
