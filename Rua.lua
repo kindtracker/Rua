@@ -567,6 +567,17 @@ function Parser:ParseFunctionCall(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseVariableAssign(State, Statement)
+  Statement.Kind = "VariableAssign"
+  Statement.Name = Parser.Token.Value
+  Parser:Advance(State)
+  Parser:Advance(State)
+  Statement.Value = Parser.Token.Value
+  Parser:Advance(State)
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -577,18 +588,30 @@ function Parser:ParseStatement(State)
   }) then
     Parser:Advance(State)
 
-    if not Parser:CheckToken(State, {
-      Kind = "Punct",
-      Value = "(",
-    }) then
-      Logger:Error(State, "SyntaxError", "Expected '(' after Identifier but got '%s'", Parser.Token.Value)
+    if
+      not Parser:CheckToken(State, {
+        Kind = "Punct",
+        Value = "(",
+      }) and not Parser:CheckToken(State, {
+        Kind = "Operator",
+        Value = "=",
+      })
+    then
+      Logger:Error(State, "SyntaxError", "Expected '(' or '=' after Identifier but got '%s'", Parser.Token.Value)
       return
     end
+
+    print(Parser.Token.Value)
 
     if Parser.Token.Value == "(" then
       Parser.Index = StartIndex
       Parser.Token = State.Tokens[StartIndex]
       Parser:ParseFunctionCall(State, Statement)
+      return Statement
+    elseif Parser.Token.Value == "=" then
+      Parser.Index = StartIndex
+      Parser.Token = State.Tokens[StartIndex]
+      Parser:ParseVariableAssign(State, Statement)
       return Statement
     end
   end
