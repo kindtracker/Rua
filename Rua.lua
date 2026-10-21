@@ -1,5 +1,37 @@
--- Comments were ai-generated. comments and type
--- notation will be used to generate Rua's documentation.
+--[[
+  Rua, single-file Lua implementation built in Lua.
+  Copyright (C) 2026 Kindtracker
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+]]
+
+--[[
+  Rua.new()
+    Creates and returns a new Rua compiler state
+
+  Rua:Run(State, FileName)
+    Reads the specified source file, tokenizes its contents,
+    parses the tokens, and populates the resulting AST
+
+  Rua:Tokenize(State)
+    Tokenizes the source code stored in State.File.Content
+    and stores the resulting tokens in State.Tokens
+
+  Rua:Parse(State)
+    Parses the tokens in State.Tokens and populates
+    State.Ast
+]]
 
 ---@class Rua
 ---@field new function
@@ -53,6 +85,8 @@ local Rua = {}
 
 ---@class RuaStatement
 ---@field Kind string
+---@field Name RuaStatement|string
+---@field Arguments RuaStatement[]
 
 ---@class AnsiTable
 ---@field Reset string ANSI escape sequence that resets terminal text formatting to its default.
@@ -145,7 +179,11 @@ local function PrintTable(Value, Indent)
 
   for Key, Item in pairs(Value) do
     io.write(string.rep("  ", Indent))
-    io.write(string.format("%s = ", Key))
+    if type(Key) == "string" then
+      io.write(string.format("[%q] = ", Key))
+    else
+      io.write(string.format("[%s] = ", Key))
+    end
 
     if type(Item) == "table" then
       io.write("{\n")
@@ -515,7 +553,10 @@ function Parser:ParseFunctionCall(State, Statement)
   while true do
     Parser:Advance(State)
 
-    if Parser.Token.Kind == "Punct" and Parser.Token.Value == ")" then
+    if Parser:CheckToken(State, {
+      Kind = "Punct",
+      Value = ")",
+    }) then
       break
     end
 
@@ -552,6 +593,7 @@ function Parser:ParseStatement(State)
     end
   end
 
+  Logger:Error(State, "SyntaxError", "Expected a statement but got '%s'", Parser.Token.Value)
   return {}
 end
 

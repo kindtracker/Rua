@@ -38,7 +38,7 @@ Game.Inventory[2] = "Bow"
 
 local Config = true and {
   Debug = true,
-:  Version = 1,
+  Version = 1,
 } or {}
 
 print({ X = 10, Y = 20 })
@@ -47,4 +47,3 @@ local Alias = Player
 Alias.Level = 6
 
 print(Player.Level)
-

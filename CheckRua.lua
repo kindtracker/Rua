@@ -1,1 +1,1 @@
-os.execute("lua-language-server --check=. --checklevel=Warning")
+os.execute("lua-language-server --check=Rua.lua --checklevel=info")
