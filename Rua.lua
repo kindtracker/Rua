@@ -151,6 +151,41 @@ local BaseEscapes = {
   ["0"] = "\0",
 }
 
+local BinaryPrecedence = {
+  ["or"] = 1,
+  ["and"] = 2,
+
+  ["<"] = 3,
+  [">"] = 3,
+  ["<="] = 3,
+  [">="] = 3,
+  ["=="] = 3,
+  ["~="] = 3,
+
+  ["|"] = 4,
+  ["~"] = 5,
+  ["&"] = 6,
+  ["<<"] = 7,
+  [">>"] = 7,
+
+  [".."] = 8,
+
+  ["+"] = 9,
+  ["-"] = 9,
+
+  ["*"] = 10,
+  ["/"] = 10,
+  ["//"] = 10,
+  ["%"] = 10,
+
+  ["^"] = 12,
+}
+
+local RightAssociative = {
+  [".."] = true,
+  ["^"] = true,
+}
+
 local WhiteSpace = "\n\t\r "
 
 ---@param Table table Table to search through.
@@ -548,6 +583,356 @@ function Parser:GoToStart(State)
   local Token = State.Tokens[Parser.StartIndex]
   Parser.Index = Parser.StartIndex
   Parser.Token = Token
+end
+
+---@param State RuaState
+---@return RuaToken|nil
+function Parser:Peek(State, Offset)
+  return State.Tokens[Parser.Index + (Offset or 1)]
+end
+
+---@param State RuaState
+---@param Value string
+---@return boolean
+function Parser:Match(State, Value)
+  if Parser.Token and Parser.Token.Value == Value then
+    Parser:Advance(State)
+    return true
+  end
+
+  return false
+end
+
+---@param State RuaState
+---@param Value string
+---@return boolean
+function Parser:ExpectValue(State, Value)
+  if not Parser.Token or Parser.Token.Value ~= Value then
+    Logger:Error(
+      State,
+      "SyntaxError",
+      "Expected '%s', got '%s'",
+      Value,
+      Parser.Token and tostring(Parser.Token.Value) or "end of file"
+    )
+
+    return false
+  end
+
+  Parser:Advance(State)
+  return true
+end
+
+---@param State RuaState
+---@return table|nil
+function Parser:ParseTableConstructor(State)
+  if not Parser:ExpectValue(State, "{") then
+    return nil
+  end
+
+  local Node = {
+    Kind = "Table",
+    Fields = {},
+  }
+
+  while Parser.Token and Parser.Token.Value ~= "}" do
+    local Field
+
+    if Parser:Match(State, "[") then
+      local Key = Parser:ParseExpression(State)
+
+      if not Key or not Parser:ExpectValue(State, "]") then
+        return nil
+      end
+
+      if not Parser:ExpectValue(State, "=") then
+        return nil
+      end
+
+      local Value = Parser:ParseExpression(State)
+
+      Field = {
+        Kind = "KeyValue",
+        Key = Key,
+        Value = Value,
+      }
+    elseif Parser.Token.Kind == "Ident" and self:Peek(State) and self:Peek(State).Value == "=" then
+      local Key = {
+        Kind = "String",
+        Value = Parser.Token.Value,
+      }
+
+      Parser:Advance(State)
+      Parser:Advance(State)
+
+      local Value = Parser:ParseExpression(State)
+
+      Field = {
+        Kind = "KeyValue",
+        Key = Key,
+        Value = Value,
+      }
+    else
+      local Value = Parser:ParseExpression(State)
+
+      Field = {
+        Kind = "ArrayValue",
+        Value = Value,
+      }
+    end
+
+    if not Field or not Field.Value then
+      return nil
+    end
+
+    table.insert(Node.Fields, Field)
+
+    if Parser:Match(State, "}") then
+      return Node
+    end
+
+    if not Parser:Match(State, ",") and not Parser:Match(State, ";") then
+      Logger:Error(State, "SyntaxError", "Expected ',' or '}' in table constructor")
+      return nil
+    end
+  end
+
+  if not Parser:ExpectValue(State, "}") then
+    return nil
+  end
+
+  return Node
+end
+
+---@param State RuaState
+---@return table|nil
+function Parser:ParsePrimaryExpression(State)
+  local Token = Parser.Token
+
+  if not Token then
+    Logger:Error(State, "SyntaxError", "Expected an expression")
+    return nil
+  end
+
+  local Node
+
+  if Token.Kind == "Number" then
+    Node = {
+      Kind = "Number",
+      Value = Token.Value,
+    }
+
+    Parser:Advance(State)
+  elseif Token.Kind == "String" then
+    Node = {
+      Kind = "String",
+      Value = Token.Value,
+    }
+
+    Parser:Advance(State)
+  elseif
+    Token.Kind == "Ident"
+    or (Token.Kind == "Keyword" and (Token.Value == "true" or Token.Value == "false" or Token.Value == "nil"))
+  then
+    if Token.Value == "true" or Token.Value == "false" then
+      Node = {
+        Kind = "Boolean",
+        Value = Token.Value == "true",
+      }
+    elseif Token.Value == "nil" then
+      Node = {
+        Kind = "Nil",
+      }
+    else
+      Node = {
+        Kind = "Identifier",
+        Name = Token.Value,
+      }
+    end
+
+    Parser:Advance(State)
+  elseif Token.Value == "(" then
+    Parser:Advance(State)
+
+    Node = Parser:ParseExpression(State)
+
+    if not Node or not Parser:ExpectValue(State, ")") then
+      return nil
+    end
+
+    Node = {
+      Kind = "Group",
+      Expression = Node,
+    }
+  elseif Token.Value == "{" then
+    Node = Parser:ParseTableConstructor(State)
+
+    if not Node then
+      return nil
+    end
+  elseif Token.Value == "not" or Token.Value == "-" or Token.Value == "#" or Token.Value == "~" then
+    local Operator = Token.Value
+    Parser:Advance(State)
+
+    local Operand = Parser:ParseExpression(State, 11)
+
+    if not Operand then
+      return nil
+    end
+
+    Node = {
+      Kind = "Unary",
+      Operator = Operator,
+      Operand = Operand,
+    }
+  else
+    Logger:Error(State, "SyntaxError", "Expected an expression, got '%s'", tostring(Token.Value))
+
+    return nil
+  end
+
+  -- Postfix expressions: member access, indexing and calls.
+  while Parser.Token do
+    if Parser:Match(State, ".") then
+      local Member = Parser.Token
+
+      if not Member or Member.Kind ~= "Ident" then
+        Logger:Error(State, "SyntaxError", "Expected member name after '.'")
+        return nil
+      end
+
+      Parser:Advance(State)
+
+      Node = {
+        Kind = "Member",
+        Object = Node,
+        Name = Member.Value,
+      }
+    elseif Parser:Match(State, "[") then
+      local Index = Parser:ParseExpression(State)
+
+      if not Index or not Parser:ExpectValue(State, "]") then
+        return nil
+      end
+
+      Node = {
+        Kind = "Index",
+        Object = Node,
+        Index = Index,
+      }
+    elseif Parser:Match(State, ":") then
+      local Method = Parser.Token
+
+      if not Method or Method.Kind ~= "Ident" then
+        Logger:Error(State, "SyntaxError", "Expected method name after ':'")
+        return nil
+      end
+
+      Parser:Advance(State)
+
+      if not Parser:ExpectValue(State, "(") then
+        return nil
+      end
+
+      local Arguments = {}
+
+      if not Parser:Match(State, ")") then
+        repeat
+          local Argument = Parser:ParseExpression(State)
+
+          if not Argument then
+            return nil
+          end
+
+          table.insert(Arguments, Argument)
+        until not Parser:Match(State, ",")
+
+        if not Parser:ExpectValue(State, ")") then
+          return nil
+        end
+      end
+
+      Node = {
+        Kind = "MethodCall",
+        Object = Node,
+        Method = Method.Value,
+        Arguments = Arguments,
+      }
+    elseif Parser:Match(State, "(") then
+      local Arguments = {}
+
+      if not Parser:Match(State, ")") then
+        repeat
+          local Argument = Parser:ParseExpression(State)
+
+          if not Argument then
+            return nil
+          end
+
+          table.insert(Arguments, Argument)
+        until not Parser:Match(State, ",")
+
+        if not Parser:ExpectValue(State, ")") then
+          return nil
+        end
+      end
+
+      Node = {
+        Kind = "Call",
+        Callee = Node,
+        Arguments = Arguments,
+      }
+    else
+      break
+    end
+  end
+
+  return Node
+end
+
+---@param State RuaState
+---@param MinPrecedence? number
+---@return table|nil
+function Parser:ParseExpression(State, MinPrecedence)
+  MinPrecedence = MinPrecedence or 1
+
+  local Left = Parser:ParsePrimaryExpression(State)
+
+  if not Left then
+    return nil
+  end
+
+  while Parser.Token do
+    local Operator = Parser.Token.Value
+    local Precedence = BinaryPrecedence[Operator]
+
+    if not Precedence or Precedence < MinPrecedence then
+      break
+    end
+
+    Parser:Advance(State)
+
+    local NextPrecedence = Precedence + 1
+
+    if RightAssociative[Operator] then
+      NextPrecedence = Precedence
+    end
+
+    local Right = Parser:ParseExpression(State, NextPrecedence)
+
+    if not Right then
+      return nil
+    end
+
+    Left = {
+      Kind = "Binary",
+      Operator = Operator,
+      Left = Left,
+      Right = Right,
+    }
+  end
+
+  return Left
 end
 
 ---@param State RuaState
