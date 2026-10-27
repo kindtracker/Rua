@@ -70,6 +70,7 @@ local Rua = {}
 ---@field Parse function
 ---@field Token RuaToken
 ---@field Index integer
+---@field StartIndex integer
 
 ---@class RuaFile
 ---@field Name string Name or path of the source file being compiled.
@@ -543,9 +544,41 @@ function Parser:Advance(State, Step)
 end
 
 ---@param State RuaState
+function Parser:GoToStart(State)
+  local Token = State.Tokens[Parser.StartIndex]
+  Parser.Index = Parser.StartIndex
+  Parser.Token = Token
+end
+
+---@param State RuaState
 ---@param Statement RuaStatement
 function Parser:ParseFunctionCall(State, Statement)
   Statement.Kind = "FunctionCall"
+  Statement.Name = Parser.Token.Value
+  Parser:Advance(State)
+
+  Statement.Arguments = {}
+  while true do
+    Parser:Advance(State)
+
+    if Parser:CheckToken(State, {
+      Kind = "Punct",
+      Value = ")",
+    }) then
+      break
+    end
+
+    local Argument = Parser.Token.Value
+    table.insert(Statement.Arguments, Argument)
+  end
+  Parser:Advance(State)
+end
+
+---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseFunction(State, Statement)
+  Statement.Kind = "Function"
+  Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser.Token.Value
   Parser:Advance(State)
 
@@ -581,7 +614,7 @@ end
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
-  local StartIndex = Parser.Index
+  Parser.StartIndex = Parser.Index
 
   Statement.Local = false
 
@@ -590,49 +623,34 @@ function Parser:ParseStatement(State)
   }) then
     Parser:Advance(State)
 
-    if
-      not Parser:CheckToken(State, {
-        Kind = "Punct",
-        Value = "(",
-      }) and not Parser:CheckToken(State, {
-        Kind = "Operator",
-        Value = "=",
-      })
-    then
-      Logger:Error(State, "SyntaxError", "Expected '(' or '=' after Identifier but got '%s'", Parser.Token.Value)
-      return
-    end
-
-    print(Parser.Token.Value)
-
     if Parser.Token.Value == "(" then
-      Parser.Index = StartIndex
-      Parser.Token = State.Tokens[StartIndex]
+      Parser:GoToStart(State)
       Parser:ParseFunctionCall(State, Statement)
       return Statement
     elseif Parser.Token.Value == "=" then
-      Parser.Index = StartIndex
-      Parser.Token = State.Tokens[StartIndex]
+      Parser:GoToStart(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
+    else
+      Logger:Error(State, "SyntaxError", "Expected '(' or '=' after Identifier but got '%s'", Parser.Token.Value)
+      return
     end
   elseif Parser:CheckToken(State, {
     Kind = "Keyword",
   }) then
-    if not Parser:CheckToken(State, {
-      Kind = "Keyword",
-      Value = "local",
-    }) then
-      Logger:Error(State, "SyntaxError", "Expected 'local' but got '%s'", Parser.Token.Value)
-      return
-    end
-
     if Parser.Token.Value == "local" then
       Parser:Advance(State)
       Statement = Parser:ParseStatement(State)
       Statement.Local = true
 
       return Statement
+    elseif Parser.Token.Value == "function" then
+      Parser:GoToStart(State)
+      Parser:ParseFunction(State, Statement)
+      return Statement
+    else
+      Logger:Error(State, "SyntaxError", "Expected 'local' or 'function' but got '%s'", Parser.Token.Value)
+      return
     end
   end
 
