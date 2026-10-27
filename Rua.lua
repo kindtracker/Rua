@@ -571,6 +571,42 @@ function Parser:ParseArgumentList(State, Statement)
 end
 
 ---@param State RuaState
+---@param AllowedEnds string[]
+---@return RuaToken[]
+function Parser:ParseBody(State, AllowedEnds)
+  local Body = {}
+  local HasEnd = false
+
+  while Parser.Token ~= nil do
+    local IsEnd = false
+
+    for _, AllowedEnd in pairs(AllowedEnds) do
+      if Parser:CheckToken(State, {
+        Kind = "Keyword",
+        Value = AllowedEnd,
+      }) then
+        IsEnd = true
+        HasEnd = true
+        break
+      end
+    end
+
+    if IsEnd then
+      break
+    end
+
+    local Statement = Parser:ParseStatement(State)
+    table.insert(Body, Statement)
+  end
+
+  if not HasEnd then
+    Logger:Error(State, "SyntaxError", "Expected '" .. table.concat(AllowedEnds, "' or '") .. "' before end of file")
+  end
+
+  return Body
+end
+
+---@param State RuaState
 ---@param Statement RuaStatement
 function Parser:ParseFunctionCall(State, Statement)
   Statement.Kind = "FunctionCall"
@@ -587,8 +623,11 @@ function Parser:ParseFunction(State, Statement)
   Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser.Token.Value
   Parser:Advance(State)
-
   Parser:ParseArgumentList(State, Statement)
+
+  local Body = Parser:ParseBody(State, { "end" })
+  Statement.Body = Body
+  Parser:Advance(State)
 end
 
 ---@param State RuaState
