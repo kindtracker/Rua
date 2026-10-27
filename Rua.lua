@@ -552,11 +552,7 @@ end
 
 ---@param State RuaState
 ---@param Statement RuaStatement
-function Parser:ParseFunctionCall(State, Statement)
-  Statement.Kind = "FunctionCall"
-  Statement.Name = Parser.Token.Value
-  Parser:Advance(State)
-
+function Parser:ParseArgumentList(State, Statement)
   Statement.Arguments = {}
   while true do
     Parser:Advance(State)
@@ -576,27 +572,23 @@ end
 
 ---@param State RuaState
 ---@param Statement RuaStatement
+function Parser:ParseFunctionCall(State, Statement)
+  Statement.Kind = "FunctionCall"
+  Statement.Name = Parser.Token.Value
+  Parser:Advance(State)
+
+  Parser:ParseArgumentList(State, Statement)
+end
+
+---@param State RuaState
+---@param Statement RuaStatement
 function Parser:ParseFunction(State, Statement)
   Statement.Kind = "Function"
   Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser.Token.Value
   Parser:Advance(State)
 
-  Statement.Arguments = {}
-  while true do
-    Parser:Advance(State)
-
-    if Parser:CheckToken(State, {
-      Kind = "Punct",
-      Value = ")",
-    }) then
-      break
-    end
-
-    local Argument = Parser.Token.Value
-    table.insert(Statement.Arguments, Argument)
-  end
-  Parser:Advance(State)
+  Parser:ParseArgumentList(State, Statement)
 end
 
 ---@param State RuaState
