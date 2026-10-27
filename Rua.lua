@@ -583,6 +583,8 @@ function Parser:ParseStatement(State)
   local Statement = {}
   local StartIndex = Parser.Index
 
+  Statement.Local = false
+
   if Parser:CheckToken(State, {
     Kind = "Ident",
   }) then
@@ -612,6 +614,24 @@ function Parser:ParseStatement(State)
       Parser.Index = StartIndex
       Parser.Token = State.Tokens[StartIndex]
       Parser:ParseVariableAssign(State, Statement)
+      return Statement
+    end
+  elseif Parser:CheckToken(State, {
+    Kind = "Keyword",
+  }) then
+    if not Parser:CheckToken(State, {
+      Kind = "Keyword",
+      Value = "local",
+    }) then
+      Logger:Error(State, "SyntaxError", "Expected 'local' but got '%s'", Parser.Token.Value)
+      return
+    end
+
+    if Parser.Token.Value == "local" then
+      Parser:Advance(State)
+      Statement = Parser:ParseStatement(State)
+      Statement.Local = true
+
       return Statement
     end
   end
