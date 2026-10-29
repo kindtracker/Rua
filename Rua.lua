@@ -52,7 +52,7 @@
   Parse Repeat-Until: Not Implemented
   Parse Do Block: Not Implemented
   Parse Numeric For: Implemented
-  Parse Generic For: Not Implemented
+  Parse Generic For: Implemented
   Parse Multiple Assignment: Not Implemented
   Parse Local Variable Declaration: Partially Implemented
   Parse Local Function Declaration: Partially Implemented
@@ -1230,20 +1230,42 @@ function Parser:ParseFor(State, Statement)
   Parser:Advance(State)
   Statement.Name = Parser.Token.Value
   Parser:Advance(State)
-  Parser:Expect(State, "Operator", "=")
-
-  local Start = Parser:ParseExpression(State)
-  Statement.Start = Start
-  Parser:Expect(State, "Punct", ",")
-  local Limit = Parser:ParseExpression(State)
-  Statement.Limit = Limit
 
   if Parser:CheckToken(State, {
-    Kind = "Punct",
-    Value = ",",
+    Kind = "Operator",
+    Value = "=",
   }) then
     Parser:Advance(State)
-    Statement.Step = Parser:ParseExpression(State)
+
+    local Start = Parser:ParseExpression(State)
+    Statement.Start = Start
+    Parser:Expect(State, "Punct", ",")
+    local Limit = Parser:ParseExpression(State)
+    Statement.Limit = Limit
+
+    if Parser:CheckToken(State, {
+      Kind = "Punct",
+      Value = ",",
+    }) then
+      Parser:Advance(State)
+      Statement.Step = Parser:ParseExpression(State)
+    end
+  else
+    Statement.KeyVariable = Statement.Name
+    Statement.Name = nil
+
+    if Parser:CheckToken(State, {
+      Kind = "Punct",
+      Value = ",",
+    }) then
+      Parser:Advance(State)
+      Statement.ValueVariable = Parser.Token.Value
+      Parser:Advance(State)
+    end
+    Parser:Expect(State, "Keyword", "in")
+
+    local Iterator = Parser:ParseExpression(State)
+    Statement.Iterator = Iterator
   end
 
   Parser:Expect(State, "Keyword", "do")
