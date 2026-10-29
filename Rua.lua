@@ -938,7 +938,7 @@ function Parser:ParsePrimaryExpression(State)
 
       Node = {
         Kind = "Member",
-        Object = Node,
+        Table = Node,
         Name = Member.Value,
       }
     elseif Parser:Match(State, "[") then
@@ -950,7 +950,7 @@ function Parser:ParsePrimaryExpression(State)
 
       Node = {
         Kind = "Index",
-        Object = Node,
+        Table = Node,
         Index = Index,
       }
     elseif Parser:Match(State, ":") then
@@ -987,8 +987,8 @@ function Parser:ParsePrimaryExpression(State)
 
       Node = {
         Kind = "MethodCall",
-        Object = Node,
-        Method = Method.Value,
+        Table = Node,
+        Name = Method.Value,
         Arguments = Arguments,
       }
     elseif Parser:Match(State, "(") then
@@ -1011,8 +1011,8 @@ function Parser:ParsePrimaryExpression(State)
       end
 
       Node = {
-        Kind = "Call",
-        Callee = Node,
+        Kind = "FunctionCall",
+        Name = Node,
         Arguments = Arguments,
       }
     else
