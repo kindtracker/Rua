@@ -218,6 +218,9 @@ local Rua = {}
 ---@field Kind string
 ---@field Name RuaStatement|string
 ---@field Arguments RuaStatement[]
+---@field Body RuaStatement[]
+---@field Else RuaStatement[]
+---@field ElseIf RuaStatement
 
 ---@class AnsiTable
 ---@field Reset string ANSI escape sequence that resets terminal text formatting to its default.
