@@ -791,7 +791,6 @@ function Parser:ParsePrimaryExpression(State)
     return nil
   end
 
-  -- Postfix expressions: member access, indexing and calls.
   while Parser.Token do
     if Parser:Match(State, ".") then
       local Member = Parser.Token
@@ -942,6 +941,10 @@ function Parser:ParseArgumentList(State, Statement)
   while true do
     Parser:Advance(State)
 
+    if Parser.Token == nil then
+      break
+    end
+
     if Parser:CheckToken(State, {
       Kind = "Punct",
       Value = ")",
@@ -949,7 +952,15 @@ function Parser:ParseArgumentList(State, Statement)
       break
     end
 
-    local Argument = Parser.Token.Value
+    if Parser:CheckToken(State, {
+      Kind = "Punct",
+      Value = ",",
+    }) then
+      Parser:Advance(State)
+    end
+
+    local Argument = Parser:ParseExpression(State)
+    Parser:Advance(State, -1)
     table.insert(Statement.Arguments, Argument)
   end
   Parser:Advance(State)
