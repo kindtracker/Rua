@@ -43,8 +43,8 @@
   Parse Function Declaration: Implemented (basic)
   Parse Expression: Implemented (basic)
   Parse Table Constructor: Implemented (basic)
-  Parse Return: Not Implemented
-  Parse Break: Not Implemented
+  Parse Return: Implemented
+  Parse Break: Implemented
   Parse If: Not Implemented
   Parse Else: Not Implemented
   Parse ElseIf: Not Implemented
@@ -92,7 +92,8 @@
   Parse Syntax Error Recovery: Not Implemented
  
   Non-Lua extensions:
-  Parse Continue: Not Implemented
+  Parse Continue: Implemented
+  Parse C-like Macro: Not Implemented
   Parse Switch Statement: Not Implemented
   Parse Match Expression: Not Implemented
   Parse Unless Statement: Not Implemented
@@ -251,6 +252,7 @@ local BaseOperators = "=<>~&|+-*/^%#"
 local BaseKeywords = {
   "and",
   "break",
+  "continue",
   "do",
   "else",
   "elseif",
@@ -1160,9 +1162,31 @@ end
 function Parser:ParseVariableAssign(State, Statement)
   Statement.Kind = "VariableAssign"
   Statement.Name = Parser.Token.Value
+  Parser:Advance(State, 2)
+  local Value = Parser:ParseExpression(State)
+  Statement.Value = Value
+end
+
+---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseReturn(State, Statement)
+  Statement.Kind = "Return"
   Parser:Advance(State)
+  local Value = Parser:ParseExpression(State)
+  Statement.Value = Value
+end
+
+---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseBreak(State, Statement)
+  Statement.Kind = "Break"
   Parser:Advance(State)
-  Statement.Value = Parser.Token.Value
+end
+
+---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseContinue(State, Statement)
+  Statement.Kind = "Continue"
   Parser:Advance(State)
 end
 
@@ -1203,6 +1227,18 @@ function Parser:ParseStatement(State)
     elseif Parser.Token.Value == "function" then
       Parser:GoToStart(State)
       Parser:ParseFunction(State, Statement)
+      return Statement
+    elseif Parser.Token.Value == "return" then
+      Parser:GoToStart(State)
+      Parser:ParseReturn(State, Statement)
+      return Statement
+    elseif Parser.Token.Value == "break" then
+      Parser:GoToStart(State)
+      Parser:ParseBreak(State, Statement)
+      return Statement
+    elseif Parser.Token.Value == "continue" then
+      Parser:GoToStart(State)
+      Parser:ParseContinue(State, Statement)
       return Statement
     else
       Logger:Error(State, "SyntaxError", "Expected 'local' or 'function' but got '%s'", Parser.Token.Value)
