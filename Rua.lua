@@ -45,9 +45,9 @@
   Parse Table Constructor: Implemented (basic)
   Parse Return: Implemented
   Parse Break: Implemented
-  Parse If: Not Implemented
-  Parse Else: Not Implemented
-  Parse ElseIf: Not Implemented
+  Parse If: Implemented
+  Parse Else: Implemented
+  Parse ElseIf: Implemented
   Parse While: Not Implemented
   Parse Repeat-Until: Not Implemented
   Parse Do Block: Not Implemented
@@ -699,7 +699,7 @@ function Parser:CheckToken(State, ExpectedToken)
 end
 
 ---@param State RuaState
----@param Step number?
+---@param Step integer?
 function Parser:Advance(State, Step)
   Step = Step or 1
 
@@ -1191,6 +1191,39 @@ function Parser:ParseContinue(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseIf(State, Statement)
+  if Parser.Token.Value == "elseif" then
+    Statement.ElseIf = { Local = false }
+    Statement = Statement.ElseIf
+  end
+
+  Statement.Kind = "If"
+  Parser:Advance(State)
+
+  local Condition = Parser:ParseExpression(State)
+  Statement.Condition = Condition
+  Parser:Expect(State, "Keyword", "then")
+
+  local Body = Parser:ParseBody(State, { "end", "else", "elseif" })
+  Statement.Body = Body
+
+  if Parser.Token.Value == "end" then
+    Parser:Advance(State)
+  elseif Parser.Token.Value == "else" then
+    Parser:Advance(State)
+    local ElseBody = Parser:ParseBody(State, { "end" })
+    Statement.Else = ElseBody
+
+    Parser:Advance(State)
+  else
+    Parser:ParseIf(State, Statement)
+    print(Statement.ElseIf)
+    Parser:Advance(State)
+  end
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -1239,6 +1272,10 @@ function Parser:ParseStatement(State)
     elseif Parser.Token.Value == "continue" then
       Parser:GoToStart(State)
       Parser:ParseContinue(State, Statement)
+      return Statement
+    elseif Parser.Token.Value == "if" then
+      Parser:GoToStart(State)
+      Parser:ParseIf(State, Statement)
       return Statement
     else
       Logger:Error(State, "SyntaxError", "Expected 'local' or 'function' but got '%s'", Parser.Token.Value)
