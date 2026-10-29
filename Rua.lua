@@ -33,6 +33,135 @@
     State.Ast
 ]]
 
+--[[
+  Parser:
+
+  Standard Lua:
+  Parse Function Call: Implemented
+  Parse Variable Assignment: Implemented
+  Parse Local Statement: Implemented (basic)
+  Parse Function Declaration: Implemented (basic)
+  Parse Expression: Implemented (basic)
+  Parse Table Constructor: Implemented (basic)
+  Parse Return: Not Implemented
+  Parse Break: Not Implemented
+  Parse If: Not Implemented
+  Parse Else: Not Implemented
+  Parse ElseIf: Not Implemented
+  Parse While: Not Implemented
+  Parse Repeat-Until: Not Implemented
+  Parse Do Block: Not Implemented
+  Parse Numeric For: Not Implemented
+  Parse Generic For: Not Implemented
+  Parse Multiple Assignment: Not Implemented
+  Parse Local Variable Declaration: Partially Implemented
+  Parse Local Function Declaration: Partially Implemented
+  Parse Anonymous Function: Not Implemented
+  Parse Method Call: Partially Implemented
+  Parse Member Access: Implemented
+  Parse Table Indexing: Implemented
+  Parse Goto: Not Implemented
+  Parse Label: Not Implemented
+  Parse Empty Statement (;): Not Implemented
+  Parse Semicolon Separator: Not Implemented
+  Parse Vararg Expression (...): Not Implemented
+  Parse Function Parameters: Partially Implemented
+  Parse Multiple Return Values: Not Implemented
+  Parse Unary Expression: Implemented (basic)
+  Parse Binary Expression: Implemented (basic)
+  Parse Parenthesized Expression: Implemented
+  Parse Boolean Literal: Implemented
+  Parse Nil Literal: Implemented
+  Parse Number Literal: Implemented
+  Parse String Literal: Implemented
+  Parse Long String Literal: Not Implemented
+  Parse Long Comment: Partially Implemented
+  Parse Concatenation Expression: Implemented (basic)
+  Parse Logical Operators (and, or): Implemented (basic)
+  Parse Comparison Operators: Implemented (basic)
+  Parse Arithmetic Operators: Implemented (basic)
+  Parse Bitwise Operators: Partially Implemented
+  Parse Floor Division Operator (//): Partially Implemented
+  Parse Exponentiation Operator (^): Implemented (basic)
+  Parse Function Call Expressions: Implemented (basic)
+  Parse Table Field Separators (, and ;): Implemented
+  Parse Nested Blocks: Partially Implemented
+  Parse Block Scope: Not Implemented
+  Parse Break Validation: Not Implemented
+  Parse Continue Validation: Not Implemented
+  Parse Syntax Error Recovery: Not Implemented
+ 
+  Non-Lua extensions:
+  Parse Continue: Not Implemented
+  Parse Switch Statement: Not Implemented
+  Parse Match Expression: Not Implemented
+  Parse Unless Statement: Not Implemented
+  Parse Infinite Loop: Not Implemented
+  Parse Defer Statement: Not Implemented
+  Parse Fallthrough Statement: Not Implemented
+  Parse Const Declaration: Not Implemented
+  Parse Compound Assignment: Not Implemented
+  Parse Increment Operator (++): Not Implemented
+  Parse Decrement Operator (--): Not Implemented
+  Parse Swap Assignment: Not Implemented
+  Parse Array Destructuring: Not Implemented
+  Parse Table Destructuring: Not Implemented
+  Parse Ternary Expression: Not Implemented
+  Parse Null-Coalescing Operator (??): Not Implemented
+  Parse Optional Chaining (?.): Not Implemented
+  Parse Pipeline Operator (|>): Not Implemented
+  Parse Elvis Operator (?:): Not Implemented
+  Parse Membership Operator (in): Not Implemented
+  Parse Non-Nil Assertion (!): Not Implemented
+  Parse String Interpolation: Not Implemented
+  Parse Spread Operator: Not Implemented
+  Parse Arrow Function: Not Implemented
+  Parse Default Parameters: Not Implemented
+  Parse Named Arguments: Not Implemented
+  Parse Try Statement: Not Implemented
+  Parse Catch Clause: Not Implemented
+  Parse Finally Clause: Not Implemented
+  Parse Throw Statement: Not Implemented
+  Parse Assert Expression: Not Implemented
+  Parse Class Declaration: Not Implemented
+  Parse Constructor: Not Implemented
+  Parse Inheritance: Not Implemented
+  Parse Interface Declaration: Not Implemented
+  Parse Trait Declaration: Not Implemented
+  Parse Static Method: Not Implemented
+  Parse Property Declaration: Not Implemented
+  Parse Operator Overloading: Not Implemented
+  Parse Import Statement: Not Implemented
+  Parse Export Statement: Not Implemented
+  Parse Import Alias: Not Implemented
+  Parse Import All: Not Implemented
+  Parse Namespace Declaration: Not Implemented
+  Parse Module Declaration: Not Implemented
+  Parse Type Annotation: Not Implemented
+  Parse Type Alias: Not Implemented
+  Parse Union Type: Not Implemented
+  Parse Intersection Type: Not Implemented
+  Parse Generic Function: Not Implemented
+  Parse Generic Type: Not Implemented
+  Parse Enum Declaration: Not Implemented
+  Parse Struct Declaration: Not Implemented
+  Parse Optional Type: Not Implemented
+  Parse Function Type: Not Implemented
+  Parse Type Cast: Not Implemented
+  Parse Runtime Type Check: Not Implemented
+  Parse Range Expression: Not Implemented
+  Parse Do Expression: Not Implemented
+  Parse Block Expression: Not Implemented
+  Parse Compile-Time Constant: Not Implemented
+  Parse Macro Invocation: Not Implemented
+  Parse Raw String Literal: Not Implemented
+  Parse Numeric Separators: Not Implemented
+  Parse Binary Integer Literal: Not Implemented
+  Parse Multiline String: Not Implemented
+  Parse Named Table Field Shorthand: Not Implemented
+  Parse Computed Table Fields: Not Implemented
+]]
+
 ---@class Rua
 ---@field new function
 ---@field Run function
