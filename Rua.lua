@@ -51,7 +51,7 @@
   Parse While: Not Implemented
   Parse Repeat-Until: Not Implemented
   Parse Do Block: Not Implemented
-  Parse Numeric For: Not Implemented
+  Parse Numeric For: Implemented
   Parse Generic For: Not Implemented
   Parse Multiple Assignment: Not Implemented
   Parse Local Variable Declaration: Partially Implemented
@@ -1224,6 +1224,36 @@ function Parser:ParseIf(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseFor(State, Statement)
+  Statement.Kind = "For"
+  Parser:Advance(State)
+  Statement.Name = Parser.Token.Value
+  Parser:Advance(State)
+  Parser:Expect(State, "Operator", "=")
+
+  local Start = Parser:ParseExpression(State)
+  Statement.Start = Start
+  Parser:Expect(State, "Punct", ",")
+  local Limit = Parser:ParseExpression(State)
+  Statement.Limit = Limit
+
+  if Parser:CheckToken(State, {
+    Kind = "Punct",
+    Value = ",",
+  }) then
+    Parser:Advance(State)
+    Statement.Step = Parser:ParseExpression(State)
+  end
+
+  Parser:Expect(State, "Keyword", "do")
+
+  local Body = Parser:ParseBody(State, { "end" })
+  Parser:Advance(State)
+  Statement.Body = Body
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -1277,8 +1307,17 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseIf(State, Statement)
       return Statement
+    elseif Parser.Token.Value == "for" then
+      Parser:GoToStart(State)
+      Parser:ParseFor(State, Statement)
+      return Statement
     else
-      Logger:Error(State, "SyntaxError", "Expected 'local' or 'function' but got '%s'", Parser.Token.Value)
+      Logger:Error(
+        State,
+        "SyntaxError",
+        "Expected 'local', 'function', 'return', 'break', 'continue', 'if', or 'for' but got '%s'",
+        Parser.Token.Value
+      )
       return
     end
   end
