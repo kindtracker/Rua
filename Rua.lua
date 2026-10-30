@@ -60,8 +60,8 @@
   Parse Method Call: Partially Implemented
   Parse Member Access: Implemented
   Parse Table Indexing: Implemented
-  Parse Goto: Not Implemented
-  Parse Label: Not Implemented
+  Parse Goto: Implemented
+  Parse Label: Implemented
   Parse Empty Statement (;): Implemented
   Parse Semicolon Separator: Implemented
   Parse Vararg Expression (...): Implemented
@@ -210,7 +210,8 @@ local Rua = {}
 
 ---@class RuaStatement
 ---@field Kind string
----@field Name RuaStatement|string
+---@field Name RuaStatement|RuaStatement[]
+---@field Value RuaStatement|RuaStatement[]
 ---@field Arguments RuaStatement[]
 ---@field Body RuaStatement[]
 ---@field Else RuaStatement[]
@@ -452,7 +453,7 @@ function Tokenizer:NewToken(State)
 end
 
 ---@param State RuaState Rua compiler state.
-function Tokenizer:ParseIdent(State)
+function Tokenizer:TokenizeIdent(State)
   local StartIndex = Tokenizer.Index
 
   while StringHasLetter(BaseIdent, Tokenizer.Character) or StringHasLetter(BaseDigits, Tokenizer.Character) do
@@ -472,7 +473,7 @@ function Tokenizer:ParseIdent(State)
 end
 
 ---@param State RuaState Rua compiler state.
-function Tokenizer:ParsePunct(State)
+function Tokenizer:TokenizePunct(State)
   if Tokenizer.Character == "." then
     local Start = Tokenizer.Index
 
@@ -494,6 +495,22 @@ function Tokenizer:ParsePunct(State)
     else
       Tokenizer:Advance(State, Start - Tokenizer.Index)
     end
+  elseif Tokenizer.Character == ":" then
+    local Start = Tokenizer.Index
+
+    Tokenizer:Advance(State)
+    if Tokenizer.Character == ":" then
+      Tokenizer.Token = {
+        Kind = "Punct",
+        Value = "::",
+      }
+
+      Tokenizer:NewToken(State)
+      Tokenizer:Advance(State)
+      return
+    else
+      Tokenizer:Advance(State, Start - Tokenizer.Index)
+    end
   end
 
   Tokenizer.Token = {
@@ -506,7 +523,7 @@ function Tokenizer:ParsePunct(State)
 end
 
 ---@param State RuaState Rua compiler state.
-function Tokenizer:ParseNumber(State)
+function Tokenizer:TokenizeNumber(State)
   local StartIndex = Tokenizer.Index
   local FirstDigit = true
   local Base = 10
@@ -539,7 +556,7 @@ function Tokenizer:ParseNumber(State)
 end
 
 ---@param State RuaState Rua compiler state.
-function Tokenizer:ParseString(State)
+function Tokenizer:TokenizeString(State)
   local StringCharacter = Tokenizer.Character
   local String = ""
 
@@ -598,7 +615,7 @@ function Tokenizer:ParseString(State)
 end
 
 ---@param State RuaState Rua compiler state.
-function Tokenizer:ParseOperator(State)
+function Tokenizer:TokenizeOperator(State)
   local IsComment, IsMultipleLineComment = false, false
   local Operator = Tokenizer.Character
 
@@ -663,15 +680,15 @@ function Tokenizer:Tokenize(State)
 
   while #Tokenizer.Character > 0 do
     if StringHasLetter(BaseIdent, Tokenizer.Character) then
-      Tokenizer:ParseIdent(State)
+      Tokenizer:TokenizeIdent(State)
     elseif StringHasLetter(BasePunct, Tokenizer.Character) then
-      Tokenizer:ParsePunct(State)
+      Tokenizer:TokenizePunct(State)
     elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
-      Tokenizer:ParseNumber(State)
+      Tokenizer:TokenizeNumber(State)
     elseif Tokenizer.Character == '"' or Tokenizer.Character == "'" then
-      Tokenizer:ParseString(State)
+      Tokenizer:TokenizeString(State)
     elseif StringHasLetter(BaseOperators, Tokenizer.Character) then
-      Tokenizer:ParseOperator(State)
+      Tokenizer:TokenizeOperator(State)
     elseif StringHasLetter(WhiteSpace, Tokenizer.Character) then
       Tokenizer:Advance(State)
     else
@@ -1418,6 +1435,31 @@ function Parser:ParseRepeat(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseGoto(State, Statement)
+  Statement.Kind = "Goto"
+  Parser:Advance(State)
+  Parser:Expect(State, "Ident", nil)
+  Parser:Advance(State, -1)
+
+  local Label = Parser.Token.Value
+  Statement.Name = Label
+  Parser:Advance(State)
+end
+
+---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseLabel(State, Statement)
+  Statement.Kind = "Label"
+  Parser:Expect(State, "Punct", "::")
+
+  local Label = Parser.Token.Value
+  Statement.Name = Label
+  Parser:Advance(State)
+  Parser:Expect(State, "Punct", "::")
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -1453,6 +1495,13 @@ function Parser:ParseStatement(State)
       )
       return
     end
+  elseif Parser:CheckToken(State, {
+    Kind = "Punct",
+    Value = "::",
+  }) then
+    Parser:GoToStart(State)
+    Parser:ParseLabel(State, Statement)
+    return Statement
   elseif Parser:CheckToken(State, {
     Kind = "Keyword",
   }) then
@@ -1497,6 +1546,10 @@ function Parser:ParseStatement(State)
     elseif Parser.Token.Value == "repeat" then
       Parser:GoToStart(State)
       Parser:ParseRepeat(State, Statement)
+      return Statement
+    elseif Parser.Token.Value == "goto" then
+      Parser:GoToStart(State)
+      Parser:ParseGoto(State, Statement)
       return Statement
     else
       Logger:Error(State, "SyntaxError", "Expected a statement but got '%s'", Parser.Token.Value)
