@@ -197,11 +197,9 @@ local Ansi = {
 }
 
 local Logger = {}
-
 local Tokenizer = {}
-
 local Parser = {}
-
+local AstDesugar = {}
 local IrGenerator = {}
 
 local BaseIdent = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
@@ -1501,6 +1499,46 @@ function Parser:Parse(State)
   end
 end
 
+function AstDesugar:Desugar(State, Ast)
+  local Table = {}
+
+  if Ast.Kind == "VariableAssign" then
+    for Idx, Name in ipairs(Ast.Name) do
+      local Value = Ast.Value[Idx]
+      table.insert(Table, {
+        Kind = "VariableAssign",
+        Local = Ast.Local,
+        Name = Name,
+        Value = Value,
+      })
+    end
+  else
+    return { Ast }
+  end
+
+  return Table
+end
+
+function AstDesugar:DesugarAst(State, Ast)
+  local Idx = 1
+
+  while Idx <= #Ast do
+    local CurrentAst = Ast[Idx]
+    local ExpandedAstTable = AstDesugar:Desugar(State, CurrentAst)
+
+    if #ExpandedAstTable == 1 and ExpandedAstTable[1] == CurrentAst then
+      Idx = Idx + 1
+    else
+      table.remove(Ast, Idx)
+
+      for ExpandedIdx, ExpandedAst in ipairs(ExpandedAstTable) do
+        table.insert(Ast, Idx, ExpandedAst)
+        Idx = Idx + 1
+      end
+    end
+  end
+end
+
 function IrGenerator:Reset(State)
   IrGenerator.Ir = {}
   IrGenerator.Registers = {}
@@ -1649,6 +1687,10 @@ function Rua:Parse(State)
   Parser:Parse(State)
 end
 
+function Rua:Desugar(State)
+  AstDesugar:DesugarAst(State, State.Ast)
+end
+
 function Rua:GenerateIr(State)
   IrGenerator:Reset(State)
   IrGenerator:GenerateIr(State)
@@ -1682,6 +1724,9 @@ function Rua:Run(State, FileName)
   PrintTable(State.Tokens)
 
   Rua:Parse(State)
+  PrintTable(State.Ast)
+
+  Rua:Desugar(State)
   PrintTable(State.Ast)
 
   Rua:GenerateIr(State)
