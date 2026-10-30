@@ -43,7 +43,7 @@
   Parse Function Declaration: Implemented
   Parse Expression: Implemented
   Parse Table Constructor: Implemented
-  Parse Return: Partially Implemented
+  Parse Return: Implemented
   Parse Break: Implemented
   Parse If: Implemented
   Parse Else: Implemented
@@ -74,8 +74,8 @@
   Parse Nil Literal: Implemented
   Parse Number Literal: Implemented
   Parse String Literal: Implemented
-  Parse Long String Literal: Not Implemented
-  Parse Long Comment: Partially Implemented
+  Parse Long String Literal: Implemented
+  Parse Long Comment: Implemented
   Parse Concatenation Expression: Implemented
   Parse Logical Operators (and, or): Implemented
   Parse Comparison Operators: Implemented
@@ -475,8 +475,6 @@ end
 
 ---@param State RuaState Rua compiler state.
 function Tokenizer:TokenizePunct(State)
-  print(Tokenizer.Character, Tokenizer.Index)
-
   if Tokenizer.Character == "." then
     local Start = Tokenizer.Index
 
@@ -513,6 +511,14 @@ function Tokenizer:TokenizePunct(State)
       return
     else
       Tokenizer:Advance(State, Start - Tokenizer.Index)
+    end
+  elseif Tokenizer.Character == "[" then
+    Tokenizer:Advance(State)
+
+    if StringHasLetter("[=", Tokenizer.Character) then
+      Tokenizer:Advance(State, -1)
+      Tokenizer:TokenizeString(State)
+      return
     end
   end
 
@@ -561,7 +567,21 @@ end
 ---@param State RuaState Rua compiler state.
 function Tokenizer:TokenizeString(State)
   local StringCharacter = Tokenizer.Character
-  local String = ""
+  local String, IsMultipleLineString, StringLevel = "", false, 0
+
+  if Tokenizer.Character == "[" then
+    Tokenizer:Advance(State)
+
+    while Tokenizer.Character == "=" do
+      StringLevel = StringLevel + 1
+      Tokenizer:Advance(State)
+    end
+
+    if Tokenizer.Character == "[" then
+      Tokenizer:Advance(State)
+      IsMultipleLineString = true
+    end
+  end
 
   Tokenizer:Advance(State)
 
@@ -597,6 +617,19 @@ function Tokenizer:TokenizeString(State)
         Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
         return
       end
+    elseif IsMultipleLineString and Tokenizer.Character == "]" then
+      Tokenizer:Advance(State)
+
+      for Idx = 0, StringLevel do
+        if Tokenizer.Character ~= "]" then
+          goto continue
+        end
+      end
+
+      if Tokenizer.Character == "]" then
+        Tokenizer:Advance(State)
+        break
+      end
     else
       String = String .. Tokenizer.Character
     end
@@ -606,6 +639,8 @@ function Tokenizer:TokenizeString(State)
     end
 
     Tokenizer:Advance(State)
+
+    ::continue::
   end
 
   Tokenizer.Token = {
@@ -619,7 +654,7 @@ end
 
 ---@param State RuaState Rua compiler state.
 function Tokenizer:TokenizeOperator(State)
-  local IsComment, IsMultipleLineComment = false, false
+  local IsComment, IsMultipleLineComment, CommentLevel = false, false, 0
   local Operator = Tokenizer.Character
 
   Tokenizer:Advance(State)
@@ -630,6 +665,11 @@ function Tokenizer:TokenizeOperator(State)
 
     if Tokenizer.Character == "[" then
       Tokenizer:Advance(State)
+
+      while Tokenizer.Character == "=" do
+        CommentLevel = CommentLevel + 1
+        Tokenizer:Advance(State)
+      end
 
       if Tokenizer.Character == "[" then
         Tokenizer:Advance(State)
@@ -652,8 +692,14 @@ function Tokenizer:TokenizeOperator(State)
         if Tokenizer.Character == "\n" then
           break
         end
-      elseif Tokenizer.Character == "]" then
+      elseif IsMultipleLineComment and Tokenizer.Character == "]" then
         Tokenizer:Advance(State)
+
+        for Idx = 0, CommentLevel do
+          if Tokenizer.Character ~= "=" then
+            goto continue
+          end
+        end
 
         if Tokenizer.Character == "]" then
           Tokenizer:Advance(State)
@@ -1341,7 +1387,6 @@ function Parser:ParseIf(State, Statement)
     Parser:Advance(State)
   else
     Parser:ParseIf(State, Statement)
-    print(Statement.ElseIf)
     Parser:Advance(State)
   end
 end
@@ -1482,11 +1527,11 @@ function Parser:ParseStatement(State)
   }) then
     Parser:Advance(State)
 
-    if StringHasLetter("(:", Parser.Token.Value) then
+    if Parser.Token and StringHasLetter("(:", Parser.Token.Value) then
       Parser:GoToStart(State)
       Parser:ParseFunctionCall(State, Statement)
       return Statement
-    elseif StringHasLetter("=.,", Parser.Token.Value) then
+    elseif Parser.Token and StringHasLetter("=.,", Parser.Token.Value) then
       Parser:GoToStart(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
@@ -1495,7 +1540,7 @@ function Parser:ParseStatement(State)
         State,
         "SyntaxError",
         "Expected '(', '=', '.', or ',' after identifier but got '%s'",
-        Parser.Token.Value
+        Parser.Token and Parser.Token.Value or "<EOF>"
       )
       return
     end
