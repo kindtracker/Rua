@@ -159,72 +159,8 @@
   Parse Computed Table Fields: Not Implemented
 ]]
 
----@class Rua
----@field new function
----@field Run function
----@field Tokenize function
----@field Parse function
----@field DevMode boolean
-
----@type Rua
 local Rua = {}
 
----@class RuaState
----@field Tokenizer table Tokenizer instance responsible for converting source code into tokens.
----@field Parser table Parser instance responsible for parsing tokens into an abstract syntax tree (AST).
----@field Tokens table List of tokens generated from the source file, in the order they appear.
----@field Ast table Abstract syntax tree (AST) representing the structure of the parsed source code.
----@field File RuaFile Information about the source file currently being compiled.
----@field ErrorMessage string Error message associated with the current compilation failure.
-
----@class RuaLogger
----@field Error function Reports a compilation error with its type and message.
-
----@class RuaTokenizer
----@field Reset function Resets the tokenizer's state before tokenization.
----@field Advance function Advances through the source file by a specified number of characters.
----@field Tokenize function Converts source code into a sequence of tokens.
----@field Index integer Current character index in the source file.
----@field Character string Character currently being examined by the tokenizer.
-
----@class RuaParser
----@field ParseFunctionCall function
----@field Advance function
----@field Reset function
----@field Parse function
----@field Token RuaToken
----@field Index integer
----@field StartIndex integer
-
----@class RuaFile
----@field Name string Name or path of the source file being compiled.
----@field Content string Complete text content of the source file being compiled.
----@field Row number Current line number in the source file.
----@field Column number Current column number in the source file.
-
----@class RuaToken
----@field Kind string
----@field Value string|number
----@field Column number
----@field Row number
-
----@class RuaStatement
----@field Kind string
----@field Name RuaStatement|RuaStatement[]
----@field Value RuaStatement|RuaStatement[]
----@field Arguments RuaStatement[]
----@field Body RuaStatement[]
----@field Else RuaStatement[]
----@field ElseIf RuaStatement
-
----@class AnsiTable
----@field Reset string ANSI escape sequence that resets terminal text formatting to its default.
----@field Yellow string ANSI escape sequence for yellow terminal text.
----@field Red string ANSI escape sequence for red terminal text.
----@field RuaRed string ANSI escape sequence for Rua's custom red terminal text color.
----@field LuaBlue string ANSI escape sequence for blue terminal text associated with Lua.
-
----@type AnsiTable
 local Ansi = {
   Reset = "\27[0m",
   Yellow = "\27[33m",
@@ -233,14 +169,13 @@ local Ansi = {
   LuaBlue = "\27[38;2;100;200;255m",
 }
 
----@type RuaLogger
 local Logger = {}
 
----@type RuaTokenizer
 local Tokenizer = {}
 
----@type RuaParser
 local Parser = {}
+
+local IrGenerator = {}
 
 local BaseIdent = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 local BasePunct = "(){}[];,:."
@@ -317,9 +252,6 @@ local RightAssociative = {
 
 local WhiteSpace = "\n\t\r "
 
----@param Table table Table to search through.
----@param Value string String value to look for in the table.
----@return boolean Whether the table contains the specified string.
 local function TableHasString(Table, Value)
   for _, Item in pairs(Table) do
     if type(Item) == "string" and Item == Value then
@@ -330,15 +262,10 @@ local function TableHasString(Table, Value)
   return false
 end
 
----@param String string String to search through.
----@param Letter string Letter or substring to look for.
----@return boolean Whether the string contains the specified letter or substring.
 local function StringHasLetter(String, Letter)
   return Letter ~= "" and string.find(String, Letter, 1, true) ~= nil
 end
 
----@param Value table Table to print.
----@param Indent? number Current indentation level.
 local function PrintTable(Value, Indent)
   Indent = Indent or 0
 
@@ -364,10 +291,6 @@ local function PrintTable(Value, Indent)
   end
 end
 
----@param State RuaState Rua compiler state.
----@param ErrorType string Type or category of the error being reported.
----@param ErrorMessageFormat string Format string used to construct the error message.
----@return ErrorMessage string Formatted error message containing the source location, error type, and description.
 function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
   local Format = "%sRua:%s %s:%d:%d: %sError:%s %s: %s\n"
 
@@ -414,7 +337,6 @@ function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
   return State.ErrorMessage
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:Reset(State)
   Tokenizer.Index = 0
   Tokenizer.Character = ""
@@ -422,8 +344,6 @@ function Tokenizer:Reset(State)
   State.File.Column = 0
 end
 
----@param State RuaState Rua compiler state.
----@param Step? number Number of characters to advance through the source file (defaults to 1).
 function Tokenizer:Advance(State, Step)
   Step = Step or 1
 
@@ -444,7 +364,6 @@ function Tokenizer:Advance(State, Step)
   end
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:NewToken(State)
   Tokenizer.Token.Row = State.File.Row
   Tokenizer.Token.Column = State.File.Column
@@ -453,7 +372,6 @@ function Tokenizer:NewToken(State)
   Tokenizer.Token = {}
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:TokenizeIdent(State)
   local StartIndex = Tokenizer.Index
 
@@ -473,7 +391,6 @@ function Tokenizer:TokenizeIdent(State)
   Tokenizer:NewToken(State)
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:TokenizePunct(State)
   if Tokenizer.Character == "." then
     local Start = Tokenizer.Index
@@ -531,7 +448,6 @@ function Tokenizer:TokenizePunct(State)
   Tokenizer:Advance(State)
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:TokenizeNumber(State)
   local StartIndex = Tokenizer.Index
   local FirstDigit = true
@@ -564,7 +480,6 @@ function Tokenizer:TokenizeNumber(State)
   Tokenizer:NewToken(State)
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:TokenizeString(State)
   local StringCharacter = Tokenizer.Character
   local String, IsMultipleLineString, StringLevel = "", false, 0
@@ -652,7 +567,6 @@ function Tokenizer:TokenizeString(State)
   Tokenizer:Advance(State)
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:TokenizeOperator(State)
   local IsComment, IsMultipleLineComment, CommentLevel = false, false, 0
   local Operator = Tokenizer.Character
@@ -723,7 +637,6 @@ function Tokenizer:TokenizeOperator(State)
   end
 end
 
----@param State RuaState Rua compiler state.
 function Tokenizer:Tokenize(State)
   Tokenizer:Advance(State)
 
@@ -747,10 +660,6 @@ function Tokenizer:Tokenize(State)
   end
 end
 
----@param State RuaState
----@param Kind string|string[]
----@param Value string?
----@return RuaToken|nil
 function Parser:Expect(State, Kind, Value)
   local ValidType = false
 
@@ -769,9 +678,6 @@ function Parser:Expect(State, Kind, Value)
   return Parser.Token
 end
 
----@param State RuaState
----@param ExpectedToken table
----@return RuaToken|nil
 function Parser:CheckToken(State, ExpectedToken)
   if not ExpectedToken.Value then
     if Parser.Token.Kind == ExpectedToken.Kind then
@@ -786,8 +692,6 @@ function Parser:CheckToken(State, ExpectedToken)
   return nil
 end
 
----@param State RuaState
----@param Step integer?
 function Parser:Advance(State, Step)
   Step = Step or 1
 
@@ -797,22 +701,16 @@ function Parser:Advance(State, Step)
   Parser.Index = NextIndex
 end
 
----@param State RuaState
 function Parser:GoToStart(State)
   local Token = State.Tokens[Parser.StartIndex]
   Parser.Index = Parser.StartIndex
   Parser.Token = Token
 end
 
----@param State RuaState
----@return RuaToken|nil
 function Parser:Peek(State, Offset)
   return State.Tokens[Parser.Index + (Offset or 1)]
 end
 
----@param State RuaState
----@param Value string
----@return boolean
 function Parser:Match(State, Value)
   if Parser.Token and Parser.Token.Value == Value then
     Parser:Advance(State)
@@ -822,9 +720,6 @@ function Parser:Match(State, Value)
   return false
 end
 
----@param State RuaState
----@param Value string
----@return boolean
 function Parser:ExpectValue(State, Value)
   if not Parser.Token or Parser.Token.Value ~= Value then
     Logger:Error(
@@ -842,8 +737,6 @@ function Parser:ExpectValue(State, Value)
   return true
 end
 
----@param State RuaState
----@return table|nil
 function Parser:ParseTableConstructor(State)
   if not Parser:ExpectValue(State, "{") then
     return nil
@@ -923,8 +816,6 @@ function Parser:ParseTableConstructor(State)
   return Node
 end
 
----@param State RuaState
----@return table|nil
 function Parser:ParsePrimaryExpression(State)
   local Token = Parser.Token
 
@@ -1117,9 +1008,6 @@ function Parser:ParsePrimaryExpression(State)
   return Node
 end
 
----@param State RuaState
----@param MinPrecedence? number
----@return table|nil
 function Parser:ParseExpression(State, MinPrecedence)
   MinPrecedence = MinPrecedence or 1
 
@@ -1162,8 +1050,6 @@ function Parser:ParseExpression(State, MinPrecedence)
   return Left
 end
 
----@param State RuaState
----@return table|nil
 function Parser:ParseExpressionList(State)
   local Expressions = {}
 
@@ -1188,8 +1074,6 @@ function Parser:ParseExpressionList(State)
   return Expressions
 end
 
----@param State RuaState
----@return table|nil
 function Parser:ParseName(State)
   local Token = Parser.Token
 
@@ -1229,14 +1113,10 @@ function Parser:ParseName(State)
   return Node
 end
 
----@param State RuaState
----@return table|nil
 function Parser:ParseNameList(State)
   return Parser:ParseExpressionList(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseArgumentList(State, Statement)
   Statement.Arguments = {}
   while true do
@@ -1267,9 +1147,6 @@ function Parser:ParseArgumentList(State, Statement)
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param AllowedEnds string[]
----@return RuaToken[]
 function Parser:ParseBody(State, AllowedEnds)
   local Body = {}
   local HasEnd = false
@@ -1303,8 +1180,6 @@ function Parser:ParseBody(State, AllowedEnds)
   return Body
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseFunctionCall(State, Statement)
   Statement.Kind = "FunctionCall"
   Statement.Name = Parser:ParseName(State)
@@ -1312,8 +1187,6 @@ function Parser:ParseFunctionCall(State, Statement)
   Parser:ParseArgumentList(State, Statement)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseFunction(State, Statement)
   Statement.Kind = "Function"
   Parser:Expect(State, "Keyword", "function")
@@ -1326,8 +1199,6 @@ function Parser:ParseFunction(State, Statement)
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseVariableAssign(State, Statement)
   Statement.Kind = "VariableAssign"
   Statement.Name = Parser:ParseNameList(State)
@@ -1336,8 +1207,6 @@ function Parser:ParseVariableAssign(State, Statement)
   Statement.Value = Value
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseReturn(State, Statement)
   Statement.Kind = "Return"
   Parser:Advance(State)
@@ -1345,22 +1214,16 @@ function Parser:ParseReturn(State, Statement)
   Statement.Value = Value
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseBreak(State, Statement)
   Statement.Kind = "Break"
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseContinue(State, Statement)
   Statement.Kind = "Continue"
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseIf(State, Statement)
   if Parser.Token.Value == "elseif" then
     Statement.ElseIf = { Local = false }
@@ -1391,8 +1254,6 @@ function Parser:ParseIf(State, Statement)
   end
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseFor(State, Statement)
   Statement.Kind = "For"
   Parser:Advance(State)
@@ -1443,8 +1304,6 @@ function Parser:ParseFor(State, Statement)
   Statement.Body = Body
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseWhile(State, Statement)
   Statement.Kind = "While"
   Parser:Advance(State)
@@ -1458,8 +1317,6 @@ function Parser:ParseWhile(State, Statement)
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseDo(State, Statement)
   Statement.Kind = "Do"
   Parser:Advance(State)
@@ -1469,8 +1326,6 @@ function Parser:ParseDo(State, Statement)
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseRepeat(State, Statement)
   Statement.Kind = "Repeat"
   Parser:Advance(State)
@@ -1483,8 +1338,6 @@ function Parser:ParseRepeat(State, Statement)
   Statement.Condition = Condition
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseGoto(State, Statement)
   Statement.Kind = "Goto"
   Parser:Advance(State)
@@ -1496,8 +1349,6 @@ function Parser:ParseGoto(State, Statement)
   Parser:Advance(State)
 end
 
----@param State RuaState
----@param Statement RuaStatement
 function Parser:ParseLabel(State, Statement)
   Statement.Kind = "Label"
   Parser:Expect(State, "Punct", "::")
@@ -1508,8 +1359,6 @@ function Parser:ParseLabel(State, Statement)
   Parser:Expect(State, "Punct", "::")
 end
 
----@param State RuaState
----@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
   Parser.StartIndex = Parser.Index
@@ -1610,13 +1459,12 @@ function Parser:ParseStatement(State)
   return {}
 end
 
----@param State RuaState
 function Parser:Reset(State)
   Parser.Token = nil
   Parser.Index = 1
+  State.Ast = {}
 end
 
----@param State RuaState
 function Parser:Parse(State)
   Parser:Advance(State, 0)
 
@@ -1626,43 +1474,64 @@ function Parser:Parse(State)
   end
 end
 
----@param State RuaState Rua compiler state containing the tokenizer, parser, tokens, and AST.
+function IrGenerator:Reset(State)
+  IrGenerator.Ir = {}
+  State.Ir = {}
+end
+
+function IrGenerator:NewIr(State)
+  local Ir = IrGenerator.Ir
+  table.insert(State.Ir, Ir)
+
+  IrGenerator.Ir = {}
+end
+
+function IrGenerator:GenerateFunctionCall(State, Ast)
+  IrGenerator.Ir = {
+    [1] = "FunctionCall",
+    [2] = Ast.Name,
+  }
+  IrGenerator:NewIr(State)
+end
+
+function IrGenerator:Generate(State, Ast)
+  if Ast.Kind == "FunctionCall" then
+    IrGenerator:GenerateFunctionCall(State, Ast)
+  end
+end
+
+function IrGenerator:GenerateIr(State)
+  for _, Ast in ipairs(State.Ast) do
+    IrGenerator:Generate(State, Ast)
+  end
+end
+
 function Rua:Tokenize(State)
   Tokenizer:Reset(State)
   Tokenizer:Tokenize(State)
 end
 
----@param State RuaState Rua compiler state containing the tokenizer, parser, tokens, and AST.
 function Rua:Parse(State)
   Parser:Reset(State)
   Parser:Parse(State)
 end
 
----@return RuaState State A new compiler state containing an initialized tokenizer, parser, token list, and AST.
+function Rua:GenerateIr(State)
+  IrGenerator:Reset(State)
+  IrGenerator:GenerateIr(State)
+end
+
 function Rua.new()
   return {
     File = {
       Content = "",
     },
-    Tokenizer = {
-      Index = 0,
-      Character = "",
-      Token = {},
-    },
-    Parser = {
-      Token = {},
-    },
     Tokens = {},
     Ast = {},
+    Ir = {},
   }
 end
 
---- Runs the Rua compiler on a source file.
---- Reads the source file, tokenizes its contents, and parses the resulting tokens.
----@param State RuaState Rua compiler state containing the tokenizer, parser, tokens, and AST.
----@param FileName string Path to the source file to compile.
----@return string|nil Result Generated output if compilation succeeds, or nil if an error occurs.
----@return string|nil Error Error message describing the failure, or nil if compilation succeeds.
 function Rua:Run(State, FileName)
   local FilePtr, Error = io.open(FileName, "r")
   if not FilePtr then
@@ -1677,6 +1546,9 @@ function Rua:Run(State, FileName)
 
   Rua:Parse(State)
   PrintTable(State.Ast)
+
+  Rua:GenerateIr(State)
+  PrintTable(State.Ir)
 
   return nil, nil
 end
