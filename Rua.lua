@@ -49,11 +49,11 @@
   Parse Else: Implemented
   Parse ElseIf: Implemented
   Parse While: Implemented
-  Parse Repeat-Until: Not Implemented
+  Parse Repeat-Until: Implemented
   Parse Do Block: Implemented
   Parse Numeric For: Implemented
   Parse Generic For: Implemented
-  Parse Multiple Assignment: Not Implemented
+  Parse Multiple Assignment: Implemented
   Parse Local Variable Declaration: Implemented
   Parse Local Function Declaration: Implemented
   Parse Anonymous Function: Implemented
@@ -62,11 +62,11 @@
   Parse Table Indexing: Implemented
   Parse Goto: Not Implemented
   Parse Label: Not Implemented
-  Parse Empty Statement (;): Not Implemented
-  Parse Semicolon Separator: Not Implemented
+  Parse Empty Statement (;): Implemented
+  Parse Semicolon Separator: Implemented
   Parse Vararg Expression (...): Not Implemented
   Parse Function Parameters: Implemented
-  Parse Multiple Return Values: Not Implemented
+  Parse Multiple Return Values: Implemented
   Parse Unary Expression: Implemented
   Parse Binary Expression: Implemented
   Parse Parenthesized Expression: Implemented
@@ -1075,6 +1075,32 @@ end
 
 ---@param State RuaState
 ---@return table|nil
+function Parser:ParseExpressionList(State)
+  local Expressions = {}
+
+  local Expression = Parser:ParseExpression(State)
+
+  if not Expression then
+    return nil
+  end
+
+  table.insert(Expressions, Expression)
+
+  while Parser:Match(State, ",") do
+    local Expression = Parser:ParseExpression(State)
+
+    if not Expression then
+      return nil
+    end
+
+    table.insert(Expressions, Expression)
+  end
+
+  return Expressions
+end
+
+---@param State RuaState
+---@return table|nil
 function Parser:ParseName(State)
   local Token = Parser.Token
 
@@ -1112,6 +1138,12 @@ function Parser:ParseName(State)
   end
 
   return Node
+end
+
+---@param State RuaState
+---@return table|nil
+function Parser:ParseNameList(State)
+  return Parser:ParseExpressionList(State)
 end
 
 ---@param State RuaState
@@ -1208,9 +1240,9 @@ end
 ---@param Statement RuaStatement
 function Parser:ParseVariableAssign(State, Statement)
   Statement.Kind = "VariableAssign"
-  Statement.Name = Parser:ParseName(State)
-  Parser:Advance(State, 1)
-  local Value = Parser:ParseExpression(State)
+  Statement.Name = Parser:ParseNameList(State)
+  Parser:Advance(State)
+  local Value = Parser:ParseExpressionList(State)
   Statement.Value = Value
 end
 
@@ -1219,7 +1251,7 @@ end
 function Parser:ParseReturn(State, Statement)
   Statement.Kind = "Return"
   Parser:Advance(State)
-  local Value = Parser:ParseExpression(State)
+  local Value = Parser:ParseExpressionList(State)
   Statement.Value = Value
 end
 
@@ -1349,6 +1381,20 @@ function Parser:ParseDo(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseRepeat(State, Statement)
+  Statement.Kind = "Repeat"
+  Parser:Advance(State)
+
+  local Body = Parser:ParseBody(State, { "until" })
+  Statement.Body = Body
+  Parser:Advance(State)
+
+  local Condition = Parser:ParseExpression(State)
+  Statement.Condition = Condition
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -1371,12 +1417,17 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseFunctionCall(State, Statement)
       return Statement
-    elseif StringHasLetter("=.", Parser.Token.Value) then
+    elseif StringHasLetter("=.,", Parser.Token.Value) then
       Parser:GoToStart(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
     else
-      Logger:Error(State, "SyntaxError", "Expected '(', '=', '.' after Identifier but got '%s'", Parser.Token.Value)
+      Logger:Error(
+        State,
+        "SyntaxError",
+        "Expected '(', '=', '.', or ',' after identifier but got '%s'",
+        Parser.Token.Value
+      )
       return
     end
   elseif Parser:CheckToken(State, {
@@ -1420,13 +1471,12 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseDo(State, Statement)
       return Statement
+    elseif Parser.Token.Value == "repeat" then
+      Parser:GoToStart(State)
+      Parser:ParseRepeat(State, Statement)
+      return Statement
     else
-      Logger:Error(
-        State,
-        "SyntaxError",
-        "Expected 'local', 'function', 'return', 'break', 'continue', 'if', 'for', 'while', or 'do' but got '%s'",
-        Parser.Token.Value
-      )
+      Logger:Error(State, "SyntaxError", "Expected a statement but got '%s'", Parser.Token.Value)
       return
     end
   end
