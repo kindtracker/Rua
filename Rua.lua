@@ -1503,7 +1503,28 @@ end
 
 function IrGenerator:Reset(State)
   IrGenerator.Ir = {}
+  IrGenerator.Registers = {}
+  for Idx = 1, 256 do
+    IrGenerator.Registers[Idx] = false
+  end
+
   State.Ir = {}
+end
+
+function IrGenerator:AllocateRegister(State)
+  for Idx, Register in ipairs(IrGenerator.Registers) do
+    if not Register then
+      Register = true
+      IrGenerator.Registers[Idx] = true
+      return Idx
+    end
+  end
+
+  Logger:Error(State, "InternalError", "Couldn't allocate a register")
+end
+
+function IrGenerator:MarkNotUsed(State, Register)
+  IrGenerator.Registers[Register] = false
 end
 
 function IrGenerator:NewIr(State)
@@ -1514,33 +1535,41 @@ function IrGenerator:NewIr(State)
 end
 
 function IrGenerator:GenerateFunctionCall(State, Ast)
+  local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
+
   IrGenerator.Ir = {
     [1] = "CallFunctionFromRegister",
-    [2] = IrGenerator:Generate(State, Ast.Name),
+    [2] = FunctionRegister,
   }
   IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, FunctionRegister)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  local NameRegister = IrGenerator:Generate(State, Ast.Name)
+
   IrGenerator.Ir = {
     [1] = "GetVariable",
-    [2] = IrGenerator:Generate(State, Ast.Name),
-    [3] = 2,
+    [2] = NameRegister,
+    [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, NameRegister)
 
-  return 2
+  return ResultRegister
 end
 
 function IrGenerator:GenerateString(State, Ast)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
   IrGenerator.Ir = {
     [1] = "LoadString",
     [2] = Ast,
-    [3] = 1,
+    [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
 
-  return 1
+  return ResultRegister
 end
 
 function IrGenerator:Generate(State, Ast)
