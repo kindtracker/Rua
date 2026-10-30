@@ -1598,9 +1598,11 @@ function IrGenerator:GetCurrentScope(State)
 end
 
 function IrGenerator:GenerateBody(State, Ast)
+  IrGenerator:EnterScope(State)
   for _, Child in ipairs(Ast) do
     IrGenerator:Generate(State, Child)
   end
+  IrGenerator:LeaveScope(State)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast, Data)
@@ -1676,9 +1678,6 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   local NameRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
   local ResultRegister = IrGenerator:AllocateRegister(State)
 
-  local FunctionLabel = IrGenerator:NewLabel(State)
-  IrGenerator:GenerateBody(State, Ast.Body)
-
   IrGenerator.Ir = {
     [1] = "CreateFunction",
     [2] = NameRegister,
@@ -1687,6 +1686,9 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   }
   IrGenerator:NewIr(State)
   IrGenerator:MarkNotUsed(State, NameRegister)
+
+  local FunctionLabel = IrGenerator:NewLabel(State)
+  IrGenerator:GenerateBody(State, Ast.Body)
 
   if Ast.Local then
     local CurrentScope = IrGenerator:GetCurrentScope(State)
@@ -1729,23 +1731,31 @@ function IrGenerator:GenerateIr(State)
 end
 
 function IrGenerator:GenerateLuaIr(State)
-  State.LuaIr = ""
+  State.LuaIr = "::Main::\n"
+
   for _, Ir in ipairs(State.Ir) do
-    local Arguments = ""
-    for Idx, Argument in ipairs(Ir) do
-      if Idx > 2 then
-        Arguments = Arguments .. ", "
-      end
-      if Idx ~= 1 then
-        if type(Argument) == "string" then
-          Arguments = Arguments .. string.format("%q", Argument)
-        else
-          Arguments = Arguments .. Argument
+    local Text = ""
+
+    if Ir[1] == "Label" then
+      Text = string.format("\n::Label%d::", Ir[2])
+    else
+      local Arguments = ""
+
+      for Idx, Argument in ipairs(Ir) do
+        if Idx > 2 then
+          Arguments = Arguments .. ", "
+        end
+        if Idx ~= 1 then
+          if type(Argument) == "string" then
+            Arguments = Arguments .. string.format("%q", Argument)
+          else
+            Arguments = Arguments .. Argument
+          end
         end
       end
-    end
 
-    local Text = string.format("%s(%s)", Ir[1], Arguments)
+      Text = string.format("  %s(%s)", Ir[1], Arguments)
+    end
 
     State.LuaIr = State.LuaIr .. Text .. "\n"
   end
