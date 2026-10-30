@@ -157,6 +157,33 @@
   Parse Multiline String: Not Implemented
   Parse Named Table Field Shorthand: Not Implemented
   Parse Computed Table Fields: Not Implemented
+
+  IrGenerator:
+  Generate Function Call: Implemented
+  Generate Variable Assignment: Not Implemented
+  Generate Local Statement: Not Implemented
+  Generate Function Declaration: Not Implemented
+  Generate Return: Not Implemented
+  Generate Break: Not Implemented
+  Generate Method Call: Not Implemented
+  Generate If: Not Implemented
+  Generate While: Not Implemented
+  Generate Do Block: Not Implemented
+  Generate Expression: Not Implemented
+  Generate Binary Expression: Not Implemented
+  Generate Unary Expression: Not Implemented
+  Generate Identifier: Not Implemented
+  Generate Number Literal: Not Implemented
+  Generate String Literal: Not Implemented
+  Generate Boolean Literal: Not Implemented
+  Generate Nil Literal: Not Implemented
+  Generate Table Constructor: Not Implemented
+  Generate Table Indexing: Not Implemented
+  Generate Member Access: Not Implemented
+  Generate Anonymous Function: Not Implemented
+  Generate Conditional Jump: Not Implemented
+  Generate Unconditional Jump: Not Implemented
+  Generate Labels: Not Implemented
 ]]
 
 local Rua = {}
