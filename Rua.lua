@@ -50,13 +50,13 @@
   Parse ElseIf: Implemented
   Parse While: Implemented
   Parse Repeat-Until: Not Implemented
-  Parse Do Block: Not Implemented
+  Parse Do Block: Implemented
   Parse Numeric For: Implemented
   Parse Generic For: Implemented
   Parse Multiple Assignment: Not Implemented
   Parse Local Variable Declaration: Implemented
   Parse Local Function Declaration: Implemented
-  Parse Anonymous Function: Not Implemented
+  Parse Anonymous Function: Implemented
   Parse Method Call: Partially Implemented
   Parse Member Access: Implemented
   Parse Table Indexing: Implemented
@@ -85,11 +85,7 @@
   Parse Exponentiation Operator (^): Implemented
   Parse Function Call Expressions: Implemented
   Parse Table Field Separators (, and ;): Implemented
-  Parse Nested Blocks: Partially Implemented
-  Parse Block Scope: Not Implemented
-  Parse Break Validation: Not Implemented
-  Parse Continue Validation: Not Implemented
-  Parse Syntax Error Recovery: Not Implemented
+  Parse Syntax Error Recovery: Implemented
  
   Non-Lua extensions:
   Parse Continue: Implemented
@@ -168,7 +164,6 @@
 ---@field Run function
 ---@field Tokenize function
 ---@field Parse function
----@field ExitOnError boolean
 ---@field DevMode boolean
 
 ---@type Rua
@@ -180,7 +175,6 @@ local Rua = {}
 ---@field Tokens table List of tokens generated from the source file, in the order they appear.
 ---@field Ast table Abstract syntax tree (AST) representing the structure of the parsed source code.
 ---@field File RuaFile Information about the source file currently being compiled.
----@field ExitOnError boolean Whether compilation should stop when an error occurs.
 ---@field ErrorMessage string Error message associated with the current compilation failure.
 
 ---@class RuaLogger
@@ -406,7 +400,9 @@ function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
     )
   end
 
-  if State.ExitOnError then
+  if ErrorType == "SyntaxError" then
+    Parser:Advance(State)
+  else
     if os.exit then
       os.exit(1)
     else
@@ -848,7 +844,7 @@ function Parser:ParsePrimaryExpression(State)
     return nil
   end
 
-  local Node
+  local Node = {}
 
   if Token.Kind == "Number" then
     Node = {
@@ -919,6 +915,15 @@ function Parser:ParsePrimaryExpression(State)
       Operator = Operator,
       Operand = Operand,
     }
+  elseif Token.Kind == "Keyword" and Token.Value == "function" then
+    Node.Kind = "Function"
+    Parser:Advance(State)
+    Parser:ParseArgumentList(State, Node)
+
+    local Body = Parser:ParseBody(State, { "end" })
+    Node.Body = Body
+
+    Parser:Expect(State, "Keyword", "end")
   else
     Logger:Error(State, "SyntaxError", "Expected an expression, got '%s'", tostring(Token.Value))
 
@@ -1333,6 +1338,17 @@ function Parser:ParseWhile(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseDo(State, Statement)
+  Statement.Kind = "Do"
+  Parser:Advance(State)
+
+  local Body = Parser:ParseBody(State, { "end" })
+  Statement.Body = Body
+  Parser:Advance(State)
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -1341,6 +1357,12 @@ function Parser:ParseStatement(State)
   Statement.Local = false
 
   if Parser:CheckToken(State, {
+    Kind = "Punct",
+    Value = ";",
+  }) then
+    Parser:Advance(State)
+    return
+  elseif Parser:CheckToken(State, {
     Kind = "Ident",
   }) then
     Parser:Advance(State)
@@ -1354,7 +1376,7 @@ function Parser:ParseStatement(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
     else
-      Logger:Error(State, "SyntaxError", "Expected '(' or '=' after Identifier but got '%s'", Parser.Token.Value)
+      Logger:Error(State, "SyntaxError", "Expected '(', '=', '.' after Identifier but got '%s'", Parser.Token.Value)
       return
     end
   elseif Parser:CheckToken(State, {
@@ -1394,11 +1416,15 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseWhile(State, Statement)
       return Statement
+    elseif Parser.Token.Value == "do" then
+      Parser:GoToStart(State)
+      Parser:ParseDo(State, Statement)
+      return Statement
     else
       Logger:Error(
         State,
         "SyntaxError",
-        "Expected 'local', 'function', 'return', 'break', 'continue', 'if', 'for', or 'while' but got '%s'",
+        "Expected 'local', 'function', 'return', 'break', 'continue', 'if', 'for', 'while', or 'do' but got '%s'",
         Parser.Token.Value
       )
       return

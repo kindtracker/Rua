@@ -15,6 +15,4 @@ if FileName == nil then
   return
 end
 
-State.ExitOnError = true
-
 local Result, Error = Rua:Run(State, FileName)
