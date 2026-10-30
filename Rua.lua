@@ -43,12 +43,12 @@
   Parse Function Declaration: Implemented
   Parse Expression: Implemented
   Parse Table Constructor: Implemented
-  Parse Return: Implemented
+  Parse Return: Partially Implemented
   Parse Break: Implemented
   Parse If: Implemented
   Parse Else: Implemented
   Parse ElseIf: Implemented
-  Parse While: Not Implemented
+  Parse While: Implemented
   Parse Repeat-Until: Not Implemented
   Parse Do Block: Not Implemented
   Parse Numeric For: Implemented
@@ -1320,6 +1320,21 @@ function Parser:ParseFor(State, Statement)
 end
 
 ---@param State RuaState
+---@param Statement RuaStatement
+function Parser:ParseWhile(State, Statement)
+  Statement.Kind = "While"
+  Parser:Advance(State)
+
+  local Condition = Parser:ParseExpression(State)
+  Statement.Condition = Condition
+  Parser:Expect(State, "Keyword", "do")
+
+  local Body = Parser:ParseBody(State, { "end" })
+  Statement.Body = Body
+  Parser:Advance(State)
+end
+
+---@param State RuaState
 ---@return RuaStatement
 function Parser:ParseStatement(State)
   local Statement = {}
@@ -1377,11 +1392,15 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseFor(State, Statement)
       return Statement
+    elseif Parser.Token.Value == "while" then
+      Parser:GoToStart(State)
+      Parser:ParseWhile(State, Statement)
+      return Statement
     else
       Logger:Error(
         State,
         "SyntaxError",
-        "Expected 'local', 'function', 'return', 'break', 'continue', 'if', or 'for' but got '%s'",
+        "Expected 'local', 'function', 'return', 'break', 'continue', 'if', 'for', or 'while' but got '%s'",
         Parser.Token.Value
       )
       return
