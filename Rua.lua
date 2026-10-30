@@ -1488,21 +1488,73 @@ end
 
 function IrGenerator:GenerateFunctionCall(State, Ast)
   IrGenerator.Ir = {
-    [1] = "FunctionCall",
-    [2] = Ast.Name,
+    [1] = "CallFunctionFromRegister",
+    [2] = IrGenerator:Generate(State, Ast.Name),
   }
   IrGenerator:NewIr(State)
 end
 
+function IrGenerator:GenerateIdentifier(State, Ast)
+  IrGenerator.Ir = {
+    [1] = "GetVariable",
+    [2] = IrGenerator:Generate(State, Ast.Name),
+    [3] = 2,
+  }
+  IrGenerator:NewIr(State)
+
+  return 2
+end
+
+function IrGenerator:GenerateString(State, Ast)
+  IrGenerator.Ir = {
+    [1] = "LoadString",
+    [2] = Ast,
+    [3] = 1,
+  }
+  IrGenerator:NewIr(State)
+
+  return 1
+end
+
 function IrGenerator:Generate(State, Ast)
-  if Ast.Kind == "FunctionCall" then
-    IrGenerator:GenerateFunctionCall(State, Ast)
+  if type(Ast) == "string" then
+    local ResultRegister = IrGenerator:GenerateString(State, Ast)
+    return ResultRegister
+  elseif Ast.Kind == "FunctionCall" then
+    local ResultRegister = IrGenerator:GenerateFunctionCall(State, Ast)
+    return ResultRegister
+  elseif Ast.Kind == "Identifier" then
+    local ResultRegister = IrGenerator:GenerateIdentifier(State, Ast)
+    return ResultRegister
   end
 end
 
 function IrGenerator:GenerateIr(State)
   for _, Ast in ipairs(State.Ast) do
     IrGenerator:Generate(State, Ast)
+  end
+end
+
+function IrGenerator:GenerateLuaIr(State)
+  State.LuaIr = ""
+  for _, Ir in ipairs(State.Ir) do
+    local Arguments = ""
+    for Idx, Argument in ipairs(Ir) do
+      if Idx > 2 then
+        Arguments = Arguments .. ", "
+      end
+      if Idx ~= 1 then
+        if type(Argument) == "string" then
+          Arguments = Arguments .. string.format("%q", Argument)
+        else
+          Arguments = Arguments .. Argument
+        end
+      end
+    end
+
+    local Text = string.format("%s(%s)", Ir[1], Arguments)
+
+    State.LuaIr = State.LuaIr .. Text .. "\n"
   end
 end
 
@@ -1519,6 +1571,10 @@ end
 function Rua:GenerateIr(State)
   IrGenerator:Reset(State)
   IrGenerator:GenerateIr(State)
+end
+
+function Rua:GenerateLuaIr(State)
+  IrGenerator:GenerateLuaIr(State)
 end
 
 function Rua.new()
@@ -1549,6 +1605,12 @@ function Rua:Run(State, FileName)
 
   Rua:GenerateIr(State)
   PrintTable(State.Ir)
+
+  if Rua.DevMode then
+    Rua:GenerateLuaIr(State)
+    local IrFile = io.open("Dev.lua", "w")
+    IrFile:write(State.LuaIr)
+  end
 
   return nil, nil
 end
