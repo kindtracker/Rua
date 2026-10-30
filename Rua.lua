@@ -1182,7 +1182,6 @@ end
 function Parser:ParseFunctionCall(State, Statement)
   Statement.Kind = "FunctionCall"
   Statement.Name = Parser:ParseName(State)
-  Parser:Advance(State)
 
   Parser:ParseArgumentList(State, Statement)
 end
@@ -1193,7 +1192,6 @@ function Parser:ParseFunction(State, Statement)
   Statement.Kind = "Function"
   Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser:ParseName(State)
-  Parser:Advance(State)
   Parser:ParseArgumentList(State, Statement)
 
   local Body = Parser:ParseBody(State, { "end" })
