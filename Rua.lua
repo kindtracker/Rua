@@ -1549,13 +1549,10 @@ function IrGenerator:Reset(State)
 end
 
 function IrGenerator:NewLabel(State)
-  IrGenerator.Ir = {
-    [1] = "Label",
-    [2] = IrGenerator.LabelId,
-  }
-  IrGenerator:NewIr(State)
-
+  local Label = IrGenerator.LabelId
   IrGenerator.LabelId = IrGenerator.LabelId + 1
+
+  return Label
 end
 
 function IrGenerator:PushContext(State)
@@ -1621,11 +1618,16 @@ function IrGenerator:GetCurrentScope(State)
   return CurrentContext.Locals
 end
 
-function IrGenerator:GenerateBody(State, Ast)
+function IrGenerator:GenerateBody(State, Ast, Label)
   IrGenerator:PushContext(State)
+
+  local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
+  Context.Label = Label
+
   for _, Child in ipairs(Ast) do
     IrGenerator:Generate(State, Child)
   end
+
   IrGenerator:PopContext(State)
 end
 
@@ -1702,22 +1704,24 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   local NameRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
   local ResultRegister = IrGenerator:AllocateRegister(State)
 
+  local FunctionLabel = IrGenerator:NewLabel(State)
+
   IrGenerator.Ir = {
     [1] = "CreateFunction",
     [2] = NameRegister,
-    [3] = IrGenerator.LabelId,
+    [3] = FunctionLabel,
     [4] = ResultRegister,
   }
   IrGenerator:NewIr(State)
-  IrGenerator:MarkNotUsed(State, NameRegister)
 
-  local FunctionLabel = IrGenerator:NewLabel(State)
-  IrGenerator:GenerateBody(State, Ast.Body)
+  IrGenerator:MarkNotUsed(State, NameRegister)
 
   if Ast.Local then
     local CurrentScope = IrGenerator:GetCurrentScope(State)
-    CurrentScope[Ast.Name] = NameRegister
+    CurrentScope[Ast.Name] = ResultRegister
   end
+
+  IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
 
   return ResultRegister
 end
@@ -1758,31 +1762,31 @@ end
 function IrGenerator:GenerateLuaIr(State)
   State.LuaIr = "::Main::\n"
 
-  for _, Ir in ipairs(State.Ir) do
-    local Text = ""
+  local function GenerateBlock(IrProgram)
+    for _, Ir in ipairs(IrProgram) do
+      local Text = ""
+      local Arguments = {}
 
-    if Ir[1] == "Label" then
-      Text = string.format("\n::Label%d::", Ir[2])
-    else
-      local Arguments = ""
+      for Idx = 2, #Ir do
+        local Argument = Ir[Idx]
 
-      for Idx, Argument in ipairs(Ir) do
-        if Idx > 2 then
-          Arguments = Arguments .. ", "
-        end
-        if Idx ~= 1 then
-          if type(Argument) == "string" then
-            Arguments = Arguments .. string.format("%q", Argument)
-          else
-            Arguments = Arguments .. Argument
-          end
+        if type(Argument) == "string" then
+          Arguments[#Arguments + 1] = string.format("%q", Argument)
+        else
+          Arguments[#Arguments + 1] = tostring(Argument)
         end
       end
 
-      Text = string.format("  %s(%s)", Ir[1], Arguments)
+      Text = string.format("  %s(%s)", Ir[1], table.concat(Arguments, ", "))
+      State.LuaIr = State.LuaIr .. Text .. "\n"
     end
+  end
 
-    State.LuaIr = State.LuaIr .. Text .. "\n"
+  GenerateBlock(State.Ir)
+
+  for _, Function in ipairs(IrGenerator.Functions) do
+    State.LuaIr = State.LuaIr .. string.format("\n::Label%d::\n", Function.Label)
+    GenerateBlock(Function.IrProgram)
   end
 end
 
