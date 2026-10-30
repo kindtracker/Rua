@@ -1534,17 +1534,6 @@ function IrGenerator:NewIr(State)
   IrGenerator.Ir = {}
 end
 
-function IrGenerator:GenerateFunctionCall(State, Ast)
-  local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
-
-  IrGenerator.Ir = {
-    [1] = "CallFunctionFromRegister",
-    [2] = FunctionRegister,
-  }
-  IrGenerator:NewIr(State)
-  IrGenerator:MarkNotUsed(State, FunctionRegister)
-end
-
 function IrGenerator:GenerateIdentifier(State, Ast)
   local ResultRegister = IrGenerator:AllocateRegister(State)
   local NameRegister = IrGenerator:Generate(State, Ast.Name)
@@ -1562,6 +1551,7 @@ end
 
 function IrGenerator:GenerateString(State, Ast)
   local ResultRegister = IrGenerator:AllocateRegister(State)
+
   IrGenerator.Ir = {
     [1] = "LoadString",
     [2] = Ast,
@@ -1572,6 +1562,31 @@ function IrGenerator:GenerateString(State, Ast)
   return ResultRegister
 end
 
+function IrGenerator:GenerateFunctionCall(State, Ast)
+  local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
+
+  IrGenerator.Ir = {
+    [1] = "CallFunctionFromRegister",
+    [2] = FunctionRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, FunctionRegister)
+end
+
+function IrGenerator:GenerateVariableAssign(State, Ast)
+  local VariableRegister = IrGenerator:Generate(State, Ast.Name)
+  local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+  IrGenerator.Ir = {
+    [1] = "Copy",
+    [2] = VariableRegister,
+    [3] = ValueRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, VariableRegister)
+  IrGenerator:MarkNotUsed(State, ValueRegister)
+end
+
 function IrGenerator:Generate(State, Ast)
   if type(Ast) == "string" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast)
@@ -1579,9 +1594,19 @@ function IrGenerator:Generate(State, Ast)
   elseif Ast.Kind == "FunctionCall" then
     local ResultRegister = IrGenerator:GenerateFunctionCall(State, Ast)
     return ResultRegister
+  elseif Ast.Kind == "VariableAssign" then
+    local ResultRegister = IrGenerator:GenerateVariableAssign(State, Ast)
+    return ResultRegister
   elseif Ast.Kind == "Identifier" then
     local ResultRegister = IrGenerator:GenerateIdentifier(State, Ast)
     return ResultRegister
+  else
+    Logger:Error(
+      State,
+      "InternalError",
+      "Couldn't find a handler for %s when generating Ir for it",
+      Ast.Kind or (type(Ast) .. " (type)")
+    )
   end
 end
 
