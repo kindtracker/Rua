@@ -64,7 +64,7 @@
   Parse Label: Not Implemented
   Parse Empty Statement (;): Implemented
   Parse Semicolon Separator: Implemented
-  Parse Vararg Expression (...): Not Implemented
+  Parse Vararg Expression (...): Implemented
   Parse Function Parameters: Implemented
   Parse Multiple Return Values: Implemented
   Parse Unary Expression: Implemented
@@ -473,6 +473,29 @@ end
 
 ---@param State RuaState Rua compiler state.
 function Tokenizer:ParsePunct(State)
+  if Tokenizer.Character == "." then
+    local Start = Tokenizer.Index
+
+    Tokenizer:Advance(State)
+    if Tokenizer.Character == "." then
+      Tokenizer:Advance(State)
+      if Tokenizer.Character == "." then
+        Tokenizer.Token = {
+          Kind = "Ident",
+          Value = "...",
+        }
+
+        Tokenizer:NewToken(State)
+        Tokenizer:Advance(State)
+        return
+      else
+        Tokenizer:Advance(State, Start - Tokenizer.Index)
+      end
+    else
+      Tokenizer:Advance(State, Start - Tokenizer.Index)
+    end
+  end
+
   Tokenizer.Token = {
     Kind = "Punct",
     Value = Tokenizer.Character,
