@@ -172,11 +172,11 @@
   Generate Expression: Not Implemented
   Generate Binary Expression: Not Implemented
   Generate Unary Expression: Not Implemented
-  Generate Identifier: Not Implemented
-  Generate Number Literal: Not Implemented
-  Generate String Literal: Not Implemented
-  Generate Boolean Literal: Not Implemented
-  Generate Nil Literal: Not Implemented
+  Generate Identifier: Partially Implemented
+  Generate Number Literal: Implemented
+  Generate String Literal: Implemented
+  Generate Boolean Literal: Implemented
+  Generate Nil Literal: Implemented
   Generate Table Constructor: Not Implemented
   Generate Table Indexing: Not Implemented
   Generate Member Access: Not Implemented
@@ -1678,6 +1678,17 @@ end
 function IrGenerator:GenerateFunctionCall(State, Ast, Data)
   local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
 
+  for Idx = #Ast.Arguments, 1, -1 do
+    local Argument = Ast.Arguments[Idx]
+    local ArgumentRegister = IrGenerator:Generate(State, Argument)
+
+    IrGenerator.Ir = {
+      [1] = "Push",
+      [2] = ArgumentRegister,
+    }
+    IrGenerator:NewIr(State)
+  end
+
   IrGenerator.Ir = {
     [1] = "CallFunctionFromRegister",
     [2] = FunctionRegister,
@@ -1726,6 +1737,44 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   return ResultRegister
 end
 
+function IrGenerator:GenerateNumber(State, Ast, Data)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "LoadNumber",
+    [2] = Ast.Value,
+    [3] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateBoolean(State, Ast, Data)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "LoadBoolean",
+    [2] = Ast.Value,
+    [3] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateNil(State, Ast, Data)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "LoadNil",
+    [2] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -1738,6 +1787,15 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Identifier" then
     local ResultRegister = IrGenerator:GenerateIdentifier(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Number" then
+    local ResultRegister = IrGenerator:GenerateNumber(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Boolean" then
+    local ResultRegister = IrGenerator:GenerateBoolean(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Nil" then
+    local ResultRegister = IrGenerator:GenerateNil(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Function" then
     local ResultRegister = IrGenerator:GenerateFunction(State, Ast, Data)
