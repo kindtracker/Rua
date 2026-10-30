@@ -1681,8 +1681,8 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   IrGenerator.Ir = {
     [1] = "CreateFunction",
     [2] = NameRegister,
-    [2] = FunctionLabel,
-    [3] = ResultRegister,
+    [3] = IrGenerator.LabelId,
+    [4] = ResultRegister,
   }
   IrGenerator:NewIr(State)
   IrGenerator:MarkNotUsed(State, NameRegister)
