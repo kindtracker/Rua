@@ -1592,7 +1592,7 @@ function IrGenerator:GenerateString(State, Ast)
 
   IrGenerator.Ir = {
     [1] = "LoadString",
-    [2] = Ast,
+    [2] = Ast.Value or Ast,
     [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
@@ -1617,8 +1617,8 @@ function IrGenerator:GenerateVariableAssign(State, Ast)
 
   IrGenerator.Ir = {
     [1] = "Copy",
-    [2] = VariableRegister,
-    [3] = ValueRegister,
+    [2] = ValueRegister,
+    [3] = VariableRegister,
   }
   IrGenerator:NewIr(State)
   IrGenerator:MarkNotUsed(State, VariableRegister)
@@ -1626,7 +1626,7 @@ function IrGenerator:GenerateVariableAssign(State, Ast)
 end
 
 function IrGenerator:Generate(State, Ast)
-  if type(Ast) == "string" then
+  if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast)
     return ResultRegister
   elseif Ast.Kind == "FunctionCall" then
