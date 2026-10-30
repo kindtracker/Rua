@@ -39,10 +39,10 @@
   Standard Lua:
   Parse Function Call: Implemented
   Parse Variable Assignment: Implemented
-  Parse Local Statement: Implemented (basic)
-  Parse Function Declaration: Implemented (basic)
-  Parse Expression: Implemented (basic)
-  Parse Table Constructor: Implemented (basic)
+  Parse Local Statement: Implemented
+  Parse Function Declaration: Implemented
+  Parse Expression: Implemented
+  Parse Table Constructor: Implemented
   Parse Return: Implemented
   Parse Break: Implemented
   Parse If: Implemented
@@ -54,8 +54,8 @@
   Parse Numeric For: Implemented
   Parse Generic For: Implemented
   Parse Multiple Assignment: Not Implemented
-  Parse Local Variable Declaration: Partially Implemented
-  Parse Local Function Declaration: Partially Implemented
+  Parse Local Variable Declaration: Implemented
+  Parse Local Function Declaration: Implemented
   Parse Anonymous Function: Not Implemented
   Parse Method Call: Partially Implemented
   Parse Member Access: Implemented
@@ -65,10 +65,10 @@
   Parse Empty Statement (;): Not Implemented
   Parse Semicolon Separator: Not Implemented
   Parse Vararg Expression (...): Not Implemented
-  Parse Function Parameters: Partially Implemented
+  Parse Function Parameters: Implemented
   Parse Multiple Return Values: Not Implemented
-  Parse Unary Expression: Implemented (basic)
-  Parse Binary Expression: Implemented (basic)
+  Parse Unary Expression: Implemented
+  Parse Binary Expression: Implemented
   Parse Parenthesized Expression: Implemented
   Parse Boolean Literal: Implemented
   Parse Nil Literal: Implemented
@@ -76,14 +76,14 @@
   Parse String Literal: Implemented
   Parse Long String Literal: Not Implemented
   Parse Long Comment: Partially Implemented
-  Parse Concatenation Expression: Implemented (basic)
-  Parse Logical Operators (and, or): Implemented (basic)
-  Parse Comparison Operators: Implemented (basic)
-  Parse Arithmetic Operators: Implemented (basic)
-  Parse Bitwise Operators: Partially Implemented
-  Parse Floor Division Operator (//): Partially Implemented
-  Parse Exponentiation Operator (^): Implemented (basic)
-  Parse Function Call Expressions: Implemented (basic)
+  Parse Concatenation Expression: Implemented
+  Parse Logical Operators (and, or): Implemented
+  Parse Comparison Operators: Implemented
+  Parse Arithmetic Operators: Implemented
+  Parse Bitwise Operators: Implemented
+  Parse Floor Division Operator (//): Implemented
+  Parse Exponentiation Operator (^): Implemented
+  Parse Function Call Expressions: Implemented
   Parse Table Field Separators (, and ;): Implemented
   Parse Nested Blocks: Partially Implemented
   Parse Block Scope: Not Implemented
@@ -1069,6 +1069,47 @@ function Parser:ParseExpression(State, MinPrecedence)
 end
 
 ---@param State RuaState
+---@return table|nil
+function Parser:ParseName(State)
+  local Token = Parser.Token
+
+  if not Token or Token.Kind ~= "Ident" then
+    Logger:Error(State, "SyntaxError", "Expected a name")
+    return nil
+  end
+
+  local Node = {
+    Kind = "Identifier",
+    Name = Token.Value,
+  }
+
+  Parser:Advance(State)
+
+  while Parser.Token and (Parser.Token.Value == "." or Parser.Token.Value == ":") do
+    local Separator = Parser.Token.Value
+    Parser:Advance(State)
+
+    local Member = Parser.Token
+
+    if not Member or Member.Kind ~= "Ident" then
+      Logger:Error(State, "SyntaxError", "Expected name after '%s'", Separator)
+      return nil
+    end
+
+    Node = {
+      Kind = "Member",
+      Table = Node,
+      Name = Member.Value,
+      Separator = Separator,
+    }
+
+    Parser:Advance(State)
+  end
+
+  return Node
+end
+
+---@param State RuaState
 ---@param Statement RuaStatement
 function Parser:ParseArgumentList(State, Statement)
   Statement.Arguments = {}
@@ -1140,7 +1181,7 @@ end
 ---@param Statement RuaStatement
 function Parser:ParseFunctionCall(State, Statement)
   Statement.Kind = "FunctionCall"
-  Statement.Name = Parser.Token.Value
+  Statement.Name = Parser:ParseName(State)
   Parser:Advance(State)
 
   Parser:ParseArgumentList(State, Statement)
@@ -1151,7 +1192,7 @@ end
 function Parser:ParseFunction(State, Statement)
   Statement.Kind = "Function"
   Parser:Expect(State, "Keyword", "function")
-  Statement.Name = Parser.Token.Value
+  Statement.Name = Parser:ParseName(State)
   Parser:Advance(State)
   Parser:ParseArgumentList(State, Statement)
 
@@ -1164,8 +1205,8 @@ end
 ---@param Statement RuaStatement
 function Parser:ParseVariableAssign(State, Statement)
   Statement.Kind = "VariableAssign"
-  Statement.Name = Parser.Token.Value
-  Parser:Advance(State, 2)
+  Statement.Name = Parser:ParseName(State)
+  Parser:Advance(State, 1)
   local Value = Parser:ParseExpression(State)
   Statement.Value = Value
 end
@@ -1295,7 +1336,7 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseFunctionCall(State, Statement)
       return Statement
-    elseif Parser.Token.Value == "=" then
+    elseif StringHasLetter("=.", Parser.Token.Value) then
       Parser:GoToStart(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
