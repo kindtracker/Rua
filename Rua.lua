@@ -1540,13 +1540,10 @@ function AstDesugar:DesugarAst(State, Ast)
 end
 
 function IrGenerator:Reset(State)
-  IrGenerator.Scopes = { {} }
+  IrGenerator.Contexts = {}
+  IrGenerator.Functions = {}
   IrGenerator.LabelId = 1
-  IrGenerator.Ir = {}
-  IrGenerator.Registers = {}
-  for Idx = 1, 256 do
-    IrGenerator.Registers[Idx] = false
-  end
+  IrGenerator:PushContext(State)
 
   State.Ir = {}
 end
@@ -1561,12 +1558,39 @@ function IrGenerator:NewLabel(State)
   IrGenerator.LabelId = IrGenerator.LabelId + 1
 end
 
-function IrGenerator:EnterScope(State)
-  table.insert(IrGenerator.Scopes, {})
+function IrGenerator:PushContext(State)
+  local Context = {
+    Registers = {},
+    IrProgram = {},
+    Locals = {},
+  }
+
+  for Idx = 1, 256 do
+    Context.Registers[Idx] = false
+  end
+
+  IrGenerator.Registers = Context.Registers
+  IrGenerator.IrProgram = Context.IrProgram
+  table.insert(IrGenerator.Contexts, Context)
 end
 
-function IrGenerator:LeaveScope(State)
-  table.remove(IrGenerator.Scopes)
+function IrGenerator:PopContext(State)
+  local Context = table.remove(IrGenerator.Contexts)
+
+  local Parent = IrGenerator.Contexts[#IrGenerator.Contexts]
+  if Parent then
+    Context.Parent = Parent
+    table.insert(IrGenerator.Functions, Context)
+  else
+    for _, Ir in ipairs(Context.IrProgram) do
+      table.insert(State.Ir, Ir)
+    end
+  end
+
+  if Parent then
+    IrGenerator.Registers = Parent.Registers
+    IrGenerator.IrProgram = Parent.IrProgram
+  end
 end
 
 function IrGenerator:AllocateRegister(State)
@@ -1587,28 +1611,28 @@ end
 
 function IrGenerator:NewIr(State)
   local Ir = IrGenerator.Ir
-  table.insert(State.Ir, Ir)
+  table.insert(IrGenerator.IrProgram, Ir)
 
   IrGenerator.Ir = {}
 end
 
 function IrGenerator:GetCurrentScope(State)
-  local CurrentScope = IrGenerator.Scopes[#IrGenerator.Scopes]
-  return CurrentScope
+  local CurrentContext = IrGenerator.Contexts[#IrGenerator.Contexts]
+  return CurrentContext.Locals
 end
 
 function IrGenerator:GenerateBody(State, Ast)
-  IrGenerator:EnterScope(State)
+  IrGenerator:PushContext(State)
   for _, Child in ipairs(Ast) do
     IrGenerator:Generate(State, Child)
   end
-  IrGenerator:LeaveScope(State)
+  IrGenerator:PopContext(State)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast, Data)
   if Data then
-    for Idx = #IrGenerator.Scopes, 1, -1 do
-      local Scope = IrGenerator.Scopes[Idx]
+    for Idx = #IrGenerator.Contexts, 1, -1 do
+      local Scope = IrGenerator.Contexts[Idx].Locals
       local VariableRegister = Scope[Ast.Name]
 
       if VariableRegister then
@@ -1728,6 +1752,7 @@ function IrGenerator:GenerateIr(State)
   for _, Ast in ipairs(State.Ast) do
     IrGenerator:Generate(State, Ast)
   end
+  IrGenerator:PopContext(State)
 end
 
 function IrGenerator:GenerateLuaIr(State)
