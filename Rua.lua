@@ -57,7 +57,7 @@
   Parse Local Variable Declaration: Implemented
   Parse Local Function Declaration: Implemented
   Parse Anonymous Function: Implemented
-  Parse Method Call: Partially Implemented
+  Parse Method Call: Implemented
   Parse Member Access: Implemented
   Parse Table Indexing: Implemented
   Parse Goto: Implemented
@@ -427,8 +427,9 @@ end
 function Tokenizer:Advance(State, Step)
   Step = Step or 1
 
-  for _ = 1, Step do
-    local Index = Tokenizer.Index + 1
+  local Direction = Step < 0 and -1 or 1
+  for _ = 1, math.abs(Step) do
+    local Index = Tokenizer.Index + Direction
     local Character = State.File.Content:sub(Index, Index)
 
     Tokenizer.Index = Index
@@ -474,6 +475,8 @@ end
 
 ---@param State RuaState Rua compiler state.
 function Tokenizer:TokenizePunct(State)
+  print(Tokenizer.Character, Tokenizer.Index)
+
   if Tokenizer.Character == "." then
     local Start = Tokenizer.Index
 
@@ -1269,6 +1272,7 @@ function Parser:ParseFunction(State, Statement)
   Statement.Kind = "Function"
   Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser:ParseName(State)
+
   Parser:ParseArgumentList(State, Statement)
 
   local Body = Parser:ParseBody(State, { "end" })
@@ -1478,7 +1482,7 @@ function Parser:ParseStatement(State)
   }) then
     Parser:Advance(State)
 
-    if Parser.Token.Value == "(" then
+    if StringHasLetter("(:", Parser.Token.Value) then
       Parser:GoToStart(State)
       Parser:ParseFunctionCall(State, Statement)
       return Statement
