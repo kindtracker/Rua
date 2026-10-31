@@ -1543,7 +1543,6 @@ function IrGenerator:Reset(State)
   IrGenerator.Contexts = {}
   IrGenerator.Functions = {}
   IrGenerator.LabelId = 1
-  IrGenerator:PushContext(State)
 
   State.Ir = {}
 end
@@ -1569,6 +1568,11 @@ function IrGenerator:PushContext(State)
   IrGenerator.Registers = Context.Registers
   IrGenerator.IrProgram = Context.IrProgram
   table.insert(IrGenerator.Contexts, Context)
+
+  IrGenerator.Ir = {
+    [1] = "NewContext",
+  }
+  IrGenerator:NewIr(State)
 end
 
 function IrGenerator:PopContext(State)
@@ -1579,6 +1583,11 @@ function IrGenerator:PopContext(State)
     Context.Parent = Parent
     table.insert(IrGenerator.Functions, Context)
   else
+    IrGenerator.Ir = {
+      [1] = "PopContext",
+    }
+    IrGenerator:NewIr(State)
+
     for _, Ir in ipairs(Context.IrProgram) do
       table.insert(State.Ir, Ir)
     end
@@ -1603,22 +1612,15 @@ function IrGenerator:AllocateRegister(State)
 end
 
 function IrGenerator:MarkNotUsed(State, Register)
-  local IsLocal = false
+  local CurrentContext = IrGenerator.Contexts[#IrGenerator.Contexts]
 
-  for Idx = #IrGenerator.Contexts, 1, -1 do
-    local Scope = IrGenerator.Contexts[Idx].Locals
-
-    for _, VariableRegister in pairs(Scope) do
-      if VariableRegister == Register then
-        IsLocal = true
-        break
-      end
+  for _, VariableRegister in pairs(CurrentContext.Locals) do
+    if VariableRegister == Register then
+      return
     end
   end
 
-  if not IsLocal then
-    IrGenerator.Registers[Register] = false
-  end
+  IrGenerator.Registers[Register] = false
 end
 
 function IrGenerator:NewIr(State)
@@ -1678,7 +1680,6 @@ function IrGenerator:GenerateIdentifier(State, Ast, Data)
     }
     IrGenerator:NewIr(State)
     IrGenerator:MarkNotUsed(State, NameRegister)
-    IrGenerator:MarkNotUsed(State, ResultRegister)
     return ResultRegister
   end
 end
@@ -1769,6 +1770,7 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
     }
     IrGenerator:NewIr(State)
     IrGenerator:MarkNotUsed(State, NameRegister)
+    IrGenerator:MarkNotUsed(State, ResultRegister)
   end
 
   IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
@@ -1970,6 +1972,8 @@ function IrGenerator:Generate(State, Ast, Data)
 end
 
 function IrGenerator:GenerateIr(State)
+  IrGenerator:PushContext(State)
+
   for _, Ast in ipairs(State.Ast) do
     local ResultRegister = IrGenerator:Generate(State, Ast)
 
@@ -1977,6 +1981,7 @@ function IrGenerator:GenerateIr(State)
       IrGenerator:MarkNotUsed(State, ResultRegister)
     end
   end
+
   IrGenerator:PopContext(State)
 end
 
