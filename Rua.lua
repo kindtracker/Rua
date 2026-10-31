@@ -177,8 +177,8 @@
   Generate Boolean Literal: Implemented
   Generate Nil Literal: Implemented
   Generate Table Constructor: Implemented
-  Generate Table Indexing: Not Implemented
-  Generate Member Access: Not Implemented
+  Generate Table Indexing: Partially Implemented
+  Generate Member Access: Implemented
   Generate Anonymous Function: Not Implemented
   Generate Conditional Jump: Not Implemented
   Generate Unconditional Jump: Not Implemented
@@ -1809,16 +1809,19 @@ function IrGenerator:GenerateIdentifier(State, Ast, Data)
     end
   end
 
-  local ResultRegister = IrGenerator:AllocateRegister(State)
-  local NameRegister = IrGenerator:Generate(State, Ast.Name)
+  if not Data then
+    local ResultRegister = IrGenerator:AllocateRegister(State)
+    local NameRegister = IrGenerator:Generate(State, Ast.Name)
 
-  IrGenerator.Ir = {
-    [1] = "GetVariable",
-    [2] = NameRegister,
-    [3] = ResultRegister,
-  }
-  IrGenerator:NewIr(State)
-  IrGenerator:MarkNotUsed(State, NameRegister)
+    IrGenerator.Ir = {
+      [1] = "GetVariable",
+      [2] = NameRegister,
+      [3] = ResultRegister,
+    }
+    IrGenerator:NewIr(State)
+    IrGenerator:MarkNotUsed(State, NameRegister)
+  end
+
   return ResultRegister
 end
 
@@ -1836,7 +1839,7 @@ function IrGenerator:GenerateString(State, Ast, Data)
 end
 
 function IrGenerator:GenerateFunctionCall(State, Ast, Data)
-  local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
+  local FunctionRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
   local ResultRegister = IrGenerator:AllocateRegister(State)
 
   for Idx = #Ast.Arguments, 1, -1 do
@@ -1849,6 +1852,10 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
     }
     IrGenerator:NewIr(State)
     IrGenerator:MarkNotUsed(State, ArgumentRegister)
+  end
+
+  if not FunctionRegister then
+    FunctionRegister = IrGenerator:AllocateRegister(State)
   end
 
   IrGenerator.Ir = {
@@ -1868,8 +1875,12 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
 end
 
 function IrGenerator:GenerateVariableAssign(State, Ast, Data)
-  local VariableRegister = IrGenerator:Generate(State, Ast.Name)
+  local VariableRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
   local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+  if not VariableRegister then
+    VariableRegister = IrGenerator:AllocateRegister(State)
+  end
 
   if Ast.Local then
     IrGenerator:AddLocalVariableRegister(State, Ast.Name, VariableRegister)
@@ -2121,6 +2132,24 @@ function IrGenerator:GenerateArrayValue(State, Ast, Data)
   IrGenerator:MarkNotUsed(State, ValueRegister)
 end
 
+function IrGenerator:GenerateMember(State, Ast, Data)
+  local TableRegister = IrGenerator:Generate(State, Ast.Table)
+  local KeyRegister = IrGenerator:Generate(State, Ast.Name)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "Index",
+    [2] = TableRegister,
+    [3] = KeyRegister,
+    [4] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, TableRegister)
+  IrGenerator:MarkNotUsed(State, KeyRegister)
+
+  return ResultRegister
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -2169,6 +2198,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "ArrayValue" then
     local ResultRegister = IrGenerator:GenerateArrayValue(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Member" then
+    local ResultRegister = IrGenerator:GenerateMember(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
