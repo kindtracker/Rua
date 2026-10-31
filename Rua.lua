@@ -164,7 +164,7 @@
   Generate Local Statement: Implemented
   Generate Function Declaration: Implemented
   Generate Return: Implemented
-  Generate Break: Not Implemented
+  Generate Break: Implemented
   Generate Method Call: Implemented
   Generate Numeric For: Implemented
   Generate Generic For: Partially Implemented
@@ -1814,6 +1814,7 @@ end
 function IrGenerator:Reset(State)
   IrGenerator.Contexts = {}
   IrGenerator.Functions = {}
+  IrGenerator.EndLabels = {}
   IrGenerator.AstLabels = {}
   IrGenerator.LabelId = 1
 
@@ -1969,9 +1970,7 @@ function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode, ExtraStartCode)
     IrGenerator:NewIr(State)
   end
 
-  IrGenerator:PopContext(State, { {
-    [1] = "Return",
-  } })
+  IrGenerator:PopContext(State)
 end
 
 function IrGenerator:AddLocalVariableRegister(State, Ast, VariableRegister)
@@ -2208,36 +2207,49 @@ end
 function IrGenerator:GenerateWhile(State, Ast, Data)
   local BodyLabel = IrGenerator:NewLabel(State)
   local ConditionLabel = IrGenerator:NewLabel(State)
+  local EndLabel = IrGenerator:NewLabel(State)
+
+  table.insert(IrGenerator.EndLabels, EndLabel)
+
+  IrGenerator.Ir = {
+    "Jump",
+    ConditionLabel,
+  }
+  IrGenerator:NewIr(State)
 
   IrGenerator:PushContext(State)
+
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
   Context.Label = ConditionLabel
 
   local ConditionRegister = IrGenerator:Generate(State, Ast.Condition)
 
+  IrGenerator:MarkNotUsed(State, ConditionRegister)
+
   IrGenerator.Ir = {
-    [1] = "JumpIfTrue",
-    [2] = ConditionRegister,
-    [3] = BodyLabel,
+    "JumpIfTrue",
+    ConditionRegister,
+    BodyLabel,
   }
   IrGenerator:NewIr(State)
-  IrGenerator:MarkNotUsed(State, ConditionRegister)
-  IrGenerator:PopContext(State)
 
+  IrGenerator.Ir = {
+    "Jump",
+    EndLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator:PopContext(Stat)
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel, {
     {
-      [1] = "Jump",
-      [2] = ConditionLabel,
+      "Jump",
+      ConditionLabel,
     },
   })
 
-  IrGenerator.Ir = {
-    [1] = "Jump",
-    [2] = ConditionLabel,
-  }
-  IrGenerator:NewIr(State)
+  IrGenerator:GenerateBody(State, {}, EndLabel)
 
-  return ResultRegister
+  table.remove(IrGenerator.EndLabels)
 end
 
 function IrGenerator:GenerateBinary(State, Ast, Data)
@@ -2410,6 +2422,16 @@ function IrGenerator:GenerateGoto(State, Ast, Data)
   IrGenerator:NewIr(State)
 end
 
+function IrGenerator:GenerateBreak(State, Ast, Data)
+  local EndLabel = IrGenerator.EndLabels[#IrGenerator.EndLabels]
+
+  IrGenerator.Ir = {
+    [1] = "Jump",
+    [2] = EndLabel,
+  }
+  IrGenerator:NewIr(State)
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -2467,6 +2489,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Goto" then
     local ResultRegister = IrGenerator:GenerateGoto(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Break" then
+    local ResultRegister = IrGenerator:GenerateBreak(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
