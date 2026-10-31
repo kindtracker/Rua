@@ -161,17 +161,19 @@
   IrGenerator:
   Generate Function Call: Implemented
   Generate Variable Assignment: Implemented
-  Generate Local Statement: Partially Implemented
-  Generate Function Declaration: Partially Implemented
-  Generate Return: Partially Implemented
+  Generate Local Statement: Implemented
+  Generate Function Declaration: Implemented
+  Generate Return: Implemented
   Generate Break: Not Implemented
-  Generate Method Call: Not Implemented
+  Generate Method Call: Implemented
+  Generate Numeric For: Implemented
+  Generate Generic For: Not Implemented
   Generate If: Implemented
   Generate While: Implemented
   Generate Expression: Implemented
   Generate Binary Expression: Implemented
   Generate Unary Expression: Implemented
-  Generate Identifier: Partially Implemented
+  Generate Identifier: Implemented
   Generate Number Literal: Implemented
   Generate String Literal: Implemented
   Generate Boolean Literal: Implemented
@@ -179,10 +181,10 @@
   Generate Table Constructor: Implemented
   Generate Table Indexing: Implemented
   Generate Member Access: Implemented
-  Generate Anonymous Function: Not Implemented
+  Generate Anonymous Function: Implemented
   Generate Conditional Jump: Not Implemented
   Generate Unconditional Jump: Not Implemented
-  Generate Labels: Not Implemented
+  Generate Labels: Implemented
 ]]
 
 local Rua = {}
@@ -1723,6 +1725,7 @@ end
 function IrGenerator:Reset(State)
   IrGenerator.Contexts = {}
   IrGenerator.Functions = {}
+  IrGenerator.AstLabels = {}
   IrGenerator.LabelId = 1
 
   State.Ir = {}
@@ -2301,6 +2304,25 @@ function IrGenerator:GenerateMember(State, Ast, Data)
   return ResultRegister
 end
 
+function IrGenerator:GenerateLabel(State, Ast, Data)
+  IrGenerator.AstLabels[Ast.Name] = IrGenerator.LabelId
+  IrGenerator.Ir = {
+    [1] = "AstLabel",
+    [2] = IrGenerator.LabelId,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.LabelId = IrGenerator.LabelId + 1
+end
+
+function IrGenerator:GenerateGoto(State, Ast, Data)
+  IrGenerator.Ir = {
+    [1] = "AstGoto",
+    [2] = IrGenerator.AstLabels[Ast.Name],
+  }
+  IrGenerator:NewIr(State)
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -2352,6 +2374,12 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Member" then
     local ResultRegister = IrGenerator:GenerateMember(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Label" then
+    local ResultRegister = IrGenerator:GenerateLabel(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Goto" then
+    local ResultRegister = IrGenerator:GenerateGoto(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
