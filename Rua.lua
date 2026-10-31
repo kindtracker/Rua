@@ -186,6 +186,7 @@
 ]]
 
 local Rua = {}
+-- Rua.Version = "0.0.1"
 
 local Ansi = {
   Reset = "\27[0m",
@@ -1642,8 +1643,42 @@ function IrGenerator:Reset(State)
   State.Ir = {}
 end
 
-function IrGenerator:ConvertAstToString(Ast)
-  return Ast.Name
+local function HashString(String)
+  local Hash = 5381
+
+  for Character in String:gmatch(".") do
+    Hash = ((Hash << 5) + Hash) + string.byte(Character)
+  end
+
+  return Hash
+end
+
+function IrGenerator:HashTable(Ast)
+  local Hash = 72
+
+  for Index, Value in pairs(Ast) do
+    local IndexHash = type(Index) == "table" and IrGenerator:HashTable(Index)
+      or type(Index) == "string" and HashString(Index)
+      or Index
+
+    local ValueHash
+
+    if type(Value) == "table" then
+      ValueHash = IrGenerator:HashTable(Value)
+    elseif type(Value) == "number" then
+      ValueHash = Value
+    elseif type(Value) == "string" then
+      ValueHash = HashString(Value)
+    elseif type(Value) == "boolean" then
+      ValueHash = Value and 1 or 0
+    else
+      ValueHash = 0
+    end
+
+    Hash = ((Hash << 5) + Hash) + IndexHash + ValueHash
+  end
+
+  return Hash
 end
 
 function IrGenerator:NewLabel(State)
@@ -1758,13 +1793,13 @@ function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode)
 end
 
 function IrGenerator:AddLocalVariableRegister(State, Ast, VariableRegister)
-  local AstString = IrGenerator:ConvertAstToString(Ast)
+  local AstString = IrGenerator:HashTable(Ast)
   local CurrentScope = IrGenerator:GetCurrentScope(State)
   CurrentScope[AstString] = VariableRegister
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast, Data)
-  local AstString = IrGenerator:ConvertAstToString(Ast)
+  local AstString = IrGenerator:HashTable(Ast)
   for Idx = #IrGenerator.Contexts, 1, -1 do
     local Scope = IrGenerator.Contexts[Idx].Locals
     local VariableRegister = Scope[AstString]
