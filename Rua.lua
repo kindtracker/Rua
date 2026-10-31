@@ -162,7 +162,7 @@
   Generate Function Call: Implemented
   Generate Variable Assignment: Implemented
   Generate Local Statement: Partially Implemented
-  Generate Function Declaration: Not Implemented
+  Generate Function Declaration: Partially Implemented
   Generate Return: Not Implemented
   Generate Break: Not Implemented
   Generate Method Call: Not Implemented
@@ -1618,7 +1618,7 @@ function IrGenerator:GetCurrentScope(State)
   return CurrentContext.Locals
 end
 
-function IrGenerator:GenerateBody(State, Ast, Label)
+function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode)
   IrGenerator:PushContext(State)
 
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
@@ -1626,6 +1626,11 @@ function IrGenerator:GenerateBody(State, Ast, Label)
 
   for _, Child in ipairs(Ast) do
     IrGenerator:Generate(State, Child)
+  end
+
+  for _, Ir in ipairs(ExtraCode) do
+    IrGenerator.Ir = Ir
+    IrGenerator:NewIr(State)
   end
 
   IrGenerator:PopContext(State)
@@ -1775,6 +1780,37 @@ function IrGenerator:GenerateNil(State, Ast, Data)
   return ResultRegister
 end
 
+function IrGenerator:GenerateWhile(State, Ast, Data)
+  local BodyLabel = IrGenerator:NewLabel(State)
+  local ConditionLabel = IrGenerator:NewLabel(State)
+
+  IrGenerator:PushContext(State)
+  local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
+  Context.Label = ConditionLabel
+
+  IrGenerator.Ir = {
+    [1] = "Jump",
+    [2] = BodyLabel,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:PopContext(State)
+
+  IrGenerator:GenerateBody(State, Ast.Body, BodyLabel, {
+    {
+      [1] = "Jump",
+      [2] = ConditionLabel,
+    },
+  })
+
+  IrGenerator.Ir = {
+    [1] = "Jump",
+    [2] = ConditionLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -1799,6 +1835,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Function" then
     local ResultRegister = IrGenerator:GenerateFunction(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "While" then
+    local ResultRegister = IrGenerator:GenerateWhile(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
