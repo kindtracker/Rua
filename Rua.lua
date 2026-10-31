@@ -1718,13 +1718,15 @@ function AstDesugar:DesugarGenericFor(State, Ast, Table)
           Ast.ValueVariable,
         },
         Value = {
-          Kind = "FunctionCall",
-          Local = false,
-          Arguments = {
-            StateName,
-            ControlName,
+          {
+            Kind = "FunctionCall",
+            Local = false,
+            Arguments = {
+              StateName,
+              ControlName,
+            },
+            Name = IteratorName,
           },
-          Name = IteratorName,
         },
       },
       {
@@ -2406,7 +2408,7 @@ end
 function IrGenerator:GenerateLabel(State, Ast, Data)
   IrGenerator.AstLabels[Ast.Name] = IrGenerator.LabelId
   IrGenerator.Ir = {
-    [1] = "AstLabel",
+    [1] = "UserLabel",
     [2] = IrGenerator.LabelId,
   }
   IrGenerator:NewIr(State)
@@ -2416,7 +2418,7 @@ end
 
 function IrGenerator:GenerateGoto(State, Ast, Data)
   IrGenerator.Ir = {
-    [1] = "AstGoto",
+    [1] = "UserGoto",
     [2] = IrGenerator.AstLabels[Ast.Name],
   }
   IrGenerator:NewIr(State)
@@ -2433,6 +2435,8 @@ function IrGenerator:GenerateBreak(State, Ast, Data)
 end
 
 function IrGenerator:Generate(State, Ast, Data)
+  print(Ast.Kind)
+
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
     return ResultRegister
