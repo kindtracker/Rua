@@ -169,9 +169,9 @@
   Generate If: Not Implemented
   Generate While: Implemented
   Generate Do Block: Not Implemented
-  Generate Expression: Not Implemented
-  Generate Binary Expression: Not Implemented
-  Generate Unary Expression: Not Implemented
+  Generate Expression: Implemented
+  Generate Binary Expression: Implemented
+  Generate Unary Expression: Implemented
   Generate Identifier: Partially Implemented
   Generate Number Literal: Implemented
   Generate String Literal: Implemented
@@ -1816,8 +1816,8 @@ end
 
 function IrGenerator:GenerateBinary(State, Ast, Data)
   local ResultRegister = IrGenerator:AllocateRegister(State)
-  local LeftRegister = IrGenerator:Generate(State, Ast.Left, Data)
-  local RightRegister = IrGenerator:Generate(State, Ast.Right, Data)
+  local LeftRegister = IrGenerator:Generate(State, Ast.Left)
+  local RightRegister = IrGenerator:Generate(State, Ast.Right)
 
   local BinaryOpcodes = {
     ["+"] = "Add",
@@ -1846,6 +1846,26 @@ function IrGenerator:GenerateBinary(State, Ast, Data)
     [2] = LeftRegister,
     [3] = RightRegister,
     [4] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateUnary(State, Ast, Data)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  local OperandRegister = IrGenerator:Generate(State, Ast.Operand)
+
+  local UnaryOpcodes = {
+    ["-"] = "Negative",
+    ["#"] = "Length",
+  }
+  local Opcode = UnaryOpcodes[Ast.Operator]
+
+  IrGenerator.Ir = {
+    [1] = Opcode,
+    [2] = OperandRegister,
+    [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
 
@@ -1882,6 +1902,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Binary" then
     local ResultRegister = IrGenerator:GenerateBinary(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Unary" then
+    local ResultRegister = IrGenerator:GenerateUnary(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
