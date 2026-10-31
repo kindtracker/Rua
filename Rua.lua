@@ -1519,7 +1519,7 @@ function AstDesugar:Desugar(State, Ast)
       Name = Ast.Name,
       Value = {
         Kind = "Binary",
-        Operaetor = "+",
+        Operator = "+",
         Left = Ast.Name,
         Right = {
           Kind = "Number",
@@ -1539,7 +1539,7 @@ function AstDesugar:Desugar(State, Ast)
       Kind = "While",
       Condition = {
         Kind = "Binary",
-        Operator = "<",
+        Operator = "<=",
         Left = Ast.Name,
         Right = Ast.Limit,
       },
