@@ -1282,8 +1282,7 @@ end
 function Parser:ParseFor(State, Statement)
   Statement.Kind = "For"
   Parser:Advance(State)
-  Statement.Name = Parser.Token.Value
-  Parser:Advance(State)
+  Statement.Name = Parser:ParseName(State)
 
   if Parser:CheckToken(State, {
     Kind = "Operator",
@@ -1512,6 +1511,40 @@ function AstDesugar:Desugar(State, Ast)
         Value = Value,
       })
     end
+  elseif Ast.Kind == "For" and Ast.Start then
+    Ast.Step = Ast.Step or 1
+
+    table.insert(Ast.Body, {
+      Kind = "VariableAssign",
+      Name = Ast.Name,
+      Value = {
+        Kind = "Binary",
+        Operaetor = "+",
+        Left = Ast.Name,
+        Right = {
+          Kind = "Number",
+          Value = 1,
+        },
+      },
+    })
+
+    table.insert(Table, {
+      Kind = "VariableAssign",
+      Local = true,
+      Name = Ast.Name,
+      Value = Ast.Start,
+    })
+
+    table.insert(Table, {
+      Kind = "While",
+      Condition = {
+        Kind = "Binary",
+        Operator = "<",
+        Left = Ast.Name,
+        Right = Ast.Limit,
+      },
+      Body = Ast.Body,
+    })
   else
     return { Ast }
   end
