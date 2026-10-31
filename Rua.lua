@@ -1637,9 +1637,22 @@ function AstDesugar:Desugar(State, Ast)
       Body = Ast.Body,
     })
   elseif Ast.Kind == "Function" and Ast.Name.Kind == "Member" then
+    local Arguments = {}
+
+    if Ast.Name.Separator == ":" then
+      table.insert(Arguments, {
+        Kind = "Identifier",
+        Name = "self",
+      })
+    end
+
+    for _, Argument in ipairs(Ast.Arguments) do
+      table.insert(Arguments, Argument)
+    end
+
     local Function = {
       Kind = "Function",
-      Arguments = Ast.Arguments,
+      Arguments = Arguments,
       Body = Ast.Body,
     }
 
@@ -1648,6 +1661,23 @@ function AstDesugar:Desugar(State, Ast)
       Local = false,
       Name = Ast.Name,
       Value = Function,
+    })
+  elseif Ast.Kind == "FunctionCall" and Ast.Name.Kind == "Member" then
+    local Arguments = {}
+
+    if Ast.Name.Separator == ":" then
+      table.insert(Arguments, Ast.Name.Table)
+    end
+
+    for _, Argument in ipairs(Ast.Arguments) do
+      table.insert(Arguments, Argument)
+    end
+
+    table.insert(Table, {
+      Kind = "FunctionCall",
+      Local = false,
+      Name = Ast.Name,
+      Arguments = Arguments,
     })
   else
     return { Ast }
