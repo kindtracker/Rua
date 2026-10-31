@@ -1538,6 +1538,144 @@ function Parser:Parse(State)
   end
 end
 
+function AstDesugar:DesugarFor(State, Ast, Table)
+  Ast.Step = Ast.Step or 1
+
+  table.insert(Ast.Body, {
+    Kind = "VariableAssign",
+    Name = Ast.Name,
+    Value = {
+      Kind = "Binary",
+      Operator = "+",
+      Left = Ast.Name,
+      Right = {
+        Kind = "Number",
+        Value = 1,
+      },
+    },
+  })
+
+  table.insert(Table, {
+    Kind = "VariableAssign",
+    Local = true,
+    Name = Ast.Name,
+    Value = Ast.Start,
+  })
+
+  table.insert(Table, {
+    Kind = "While",
+    Condition = {
+      Kind = "Binary",
+      Operator = State.Step > 0 and "<=" or ">=",
+      Left = Ast.Name,
+      Right = Ast.Limit,
+    },
+    Body = Ast.Body,
+  })
+end
+
+function AstDesugar:DesugarRepeat(State, Ast, Table)
+  local FirstIterationName = {
+    Kind = "Identifier",
+    Name = GenerateRandomName(),
+  }
+
+  table.insert(Ast.Body, {
+    Kind = "VariableAssign",
+    Name = FirstIterationName,
+    Value = {
+      Kind = "Boolean",
+      Value = false,
+    },
+  })
+
+  table.insert(Table, {
+    Kind = "VariableAssign",
+    Name = FirstIterationName,
+    Value = {
+      Kind = "Boolean",
+      Value = true,
+    },
+  })
+
+  table.insert(Table, {
+    Kind = "While",
+    Condition = {
+      Kind = "Binary",
+      Operator = "or",
+      Left = {
+        Kind = "Unary",
+        Operator = "not",
+        Operand = Ast.Condition,
+      },
+      Right = FirstIterationName,
+    },
+    Body = Ast.Body,
+  })
+end
+
+function AstDesugar:DesugarDo(State, Ast, Table)
+  table.insert(Table, {
+    Kind = "If",
+    Condition = {
+      Kind = "Boolean",
+      Value = true,
+    },
+    Body = Ast.Body,
+  })
+end
+
+function AstDesugar:DesugarFunction(State, Ast, Table)
+  local Arguments = {}
+
+  if Ast.Name.Separator == ":" then
+    table.insert(Arguments, {
+      Kind = "Identifier",
+      Name = "self",
+    })
+  end
+
+  for _, Argument in ipairs(Ast.Arguments) do
+    table.insert(Arguments, Argument)
+  end
+
+  local Function = {
+    Kind = "Function",
+    Arguments = Arguments,
+    Body = Ast.Body,
+  }
+
+  table.insert(Table, {
+    Kind = "VariableAssign",
+    Local = Ast.Local,
+    Name = {
+      [1] = Ast.Name,
+    },
+    Value = {
+      [1] = Function,
+    },
+  })
+end
+
+function AstDesugar:DesugarFunctionCall(State, Ast, Table)
+  local Arguments = {}
+
+  if Ast.Name.Separator == ":" then
+    table.insert(Arguments, Ast.Name.Table)
+  end
+
+  for _, Argument in ipairs(Ast.Arguments) do
+    table.insert(Arguments, Argument)
+  end
+
+  table.insert(Table, {
+    Kind = "FunctionCall",
+    Local = false,
+    Name = Ast.Name,
+    Arguments = Arguments,
+  })
+end
+
 function AstDesugar:Desugar(State, Ast)
   local Table = {}
 
@@ -1545,140 +1683,16 @@ function AstDesugar:Desugar(State, Ast)
     AstDesugar:DesugarAst(State, Ast.Body)
   end
 
-  if Ast.Kind == "VariableAssign" then
-    for Idx, Name in ipairs(Ast.Name) do
-      local Value = Ast.Value[Idx]
-      table.insert(Table, {
-        Kind = "VariableAssign",
-        Local = Ast.Local,
-        Name = Name,
-        Value = Value,
-      })
-    end
-  elseif Ast.Kind == "For" and Ast.Start then
-    Ast.Step = Ast.Step or 1
-
-    table.insert(Ast.Body, {
-      Kind = "VariableAssign",
-      Name = Ast.Name,
-      Value = {
-        Kind = "Binary",
-        Operator = "+",
-        Left = Ast.Name,
-        Right = {
-          Kind = "Number",
-          Value = 1,
-        },
-      },
-    })
-
-    table.insert(Table, {
-      Kind = "VariableAssign",
-      Local = true,
-      Name = Ast.Name,
-      Value = Ast.Start,
-    })
-
-    table.insert(Table, {
-      Kind = "While",
-      Condition = {
-        Kind = "Binary",
-        Operator = State.Step > 0 and "<=" or ">=",
-        Left = Ast.Name,
-        Right = Ast.Limit,
-      },
-      Body = Ast.Body,
-    })
+  if Ast.Kind == "For" and Ast.Start then
+    AstDesugar:DesugarFor(State, Ast, Table)
   elseif Ast.Kind == "Repeat" then
-    local FirstIterationName = {
-      Kind = "Identifier",
-      Name = GenerateRandomName(),
-    }
-
-    table.insert(Ast.Body, {
-      Kind = "VariableAssign",
-      Name = FirstIterationName,
-      Value = {
-        Kind = "Boolean",
-        Value = false,
-      },
-    })
-
-    table.insert(Table, {
-      Kind = "VariableAssign",
-      Name = FirstIterationName,
-      Value = {
-        Kind = "Boolean",
-        Value = true,
-      },
-    })
-
-    table.insert(Table, {
-      Kind = "While",
-      Condition = {
-        Kind = "Binary",
-        Operator = "or",
-        Left = {
-          Kind = "Unary",
-          Operator = "not",
-          Operand = Ast.Condition,
-        },
-        Right = FirstIterationName,
-      },
-      Body = Ast.Body,
-    })
+    AstDesugar:DesugarRepeat(State, Ast, Table)
   elseif Ast.Kind == "Do" then
-    table.insert(Table, {
-      Kind = "If",
-      Condition = {
-        Kind = "Boolean",
-        Value = true,
-      },
-      Body = Ast.Body,
-    })
+    AstDesugar:DesugarDo(State, Ast, Table)
   elseif Ast.Kind == "Function" then
-    local Arguments = {}
-
-    if Ast.Name.Separator == ":" then
-      table.insert(Arguments, {
-        Kind = "Identifier",
-        Name = "self",
-      })
-    end
-
-    for _, Argument in ipairs(Ast.Arguments) do
-      table.insert(Arguments, Argument)
-    end
-
-    local Function = {
-      Kind = "Function",
-      Arguments = Arguments,
-      Body = Ast.Body,
-    }
-
-    table.insert(Table, {
-      Kind = "VariableAssign",
-      Local = Ast.Local,
-      Name = Ast.Name,
-      Value = Function,
-    })
+    AstDesugar:DesugarFunction(State, Ast, Table)
   elseif Ast.Kind == "FunctionCall" and Ast.Name.Kind == "Member" then
-    local Arguments = {}
-
-    if Ast.Name.Separator == ":" then
-      table.insert(Arguments, Ast.Name.Table)
-    end
-
-    for _, Argument in ipairs(Ast.Arguments) do
-      table.insert(Arguments, Argument)
-    end
-
-    table.insert(Table, {
-      Kind = "FunctionCall",
-      Local = false,
-      Name = Ast.Name,
-      Arguments = Arguments,
-    })
+    AstDesugar:DesugarFunctionCall(State, Ast, Table)
   else
     return { Ast }
   end
@@ -1941,61 +1955,94 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
   IrGenerator:NewIr(State)
   IrGenerator:MarkNotUsed(State, FunctionRegister)
 
+  local ResultRegisters = {}
+  local ResultCount = Data or 0
+
+  for Idx = 1, ResultCount do
+    local ResultRegister = IrGenerator:AllocateRegister(State)
+    ResultRegisters[Idx] = ResultRegister
+
+    IrGenerator.Ir = {
+      [1] = "Pop",
+      [2] = ResultRegister,
+    }
+    IrGenerator:NewIr(State)
+  end
+
   IrGenerator.Ir = {
-    [1] = "Pop",
-    [2] = ResultRegister,
+    [1] = "ClearStack",
   }
   IrGenerator:NewIr(State)
 
-  return ResultRegister
+  return ResultRegisters
 end
 
 function IrGenerator:GenerateVariableAssign(State, Ast, Data)
-  if Ast.Name.Kind == "Member" then
-    local TableRegister = IrGenerator:Generate(State, Ast.Name.Table)
-    local KeyRegister = IrGenerator:Generate(State, Ast.Name.Name)
-    local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+  local ValuesRegisters = {}
 
-    IrGenerator.Ir = {
-      [1] = "NewIndex",
-      [2] = TableRegister,
-      [3] = KeyRegister,
-      [4] = ValueRegister,
-    }
-    IrGenerator:NewIr(State)
+  for _, Value in ipairs(Ast.Value) do
+    if Value.Kind == "FunctionCall" then
+      local ResultRegisters = IrGenerator:Generate(State, Value, #Ast.Name)
+      for _, ResultRegister in ipairs(ResultRegisters) do
+        table.insert(ValuesRegisters, ResultRegister)
+      end
+    else
+      local ValueRegister = IrGenerator:Generate(State, Value)
+      table.insert(ValuesRegisters, ValueRegister)
+    end
+  end
 
-    IrGenerator:MarkNotUsed(State, TableRegister)
-    IrGenerator:MarkNotUsed(State, KeyRegister)
+  for Index, Name in ipairs(Ast.Name) do
+    local ValueRegister = ValuesRegisters[Index]
+
+    if Name.Kind == "Member" then
+      local TableRegister = IrGenerator:Generate(State, Name.Table)
+      local KeyRegister = IrGenerator:Generate(State, Name.Name)
+
+      IrGenerator.Ir = {
+        [1] = "NewIndex",
+        [2] = TableRegister,
+        [3] = KeyRegister,
+        [4] = ValueRegister,
+      }
+      IrGenerator:NewIr(State)
+      IrGenerator:MarkNotUsed(State, TableRegister)
+      IrGenerator:MarkNotUsed(State, KeyRegister)
+    else
+      local VariableRegister = IrGenerator:Generate(State, Name, Ast.Local)
+
+      if not VariableRegister then
+        VariableRegister = IrGenerator:AllocateRegister(State)
+      end
+
+      if Ast.Local then
+        IrGenerator:AddLocalVariableRegister(State, Name, VariableRegister)
+      end
+
+      if ValueRegister then
+        IrGenerator.Ir = {
+          [1] = "Copy",
+          [2] = ValueRegister,
+          [3] = VariableRegister,
+        }
+        IrGenerator:NewIr(State)
+        IrGenerator:MarkNotUsed(State, ValueRegister)
+      end
+
+      IrGenerator:MarkNotUsed(State, VariableRegister)
+    end
+  end
+
+  for _, ValueRegister in ipairs(ValuesRegisters) do
     IrGenerator:MarkNotUsed(State, ValueRegister)
-
-    return
   end
-
-  local VariableRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
-  local ValueRegister = IrGenerator:Generate(State, Ast.Value)
-
-  if not VariableRegister then
-    VariableRegister = IrGenerator:AllocateRegister(State)
-  end
-
-  if Ast.Local then
-    IrGenerator:AddLocalVariableRegister(State, Ast.Name, VariableRegister)
-  end
-
-  IrGenerator.Ir = {
-    [1] = "Copy",
-    [2] = ValueRegister,
-    [3] = VariableRegister,
-  }
-  IrGenerator:NewIr(State)
-
-  IrGenerator:MarkNotUsed(State, VariableRegister)
-  IrGenerator:MarkNotUsed(State, ValueRegister)
 end
 
 function IrGenerator:GenerateFunction(State, Ast, Data)
   local ResultRegister = IrGenerator:AllocateRegister(State)
   local BodyLabel = IrGenerator:NewLabel(State)
+
+  print(BodyLabel, ResultRegister)
 
   IrGenerator.Ir = {
     [1] = "CreateFunction",
