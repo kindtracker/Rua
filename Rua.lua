@@ -1636,7 +1636,7 @@ function AstDesugar:Desugar(State, Ast)
       },
       Body = Ast.Body,
     })
-  elseif Ast.Kind == "Function" and Ast.Name.Kind == "Member" then
+  elseif Ast.Kind == "Function" then
     local Arguments = {}
 
     if Ast.Name.Separator == ":" then
@@ -1658,7 +1658,7 @@ function AstDesugar:Desugar(State, Ast)
 
     table.insert(Table, {
       Kind = "VariableAssign",
-      Local = false,
+      Local = Ast.Local,
       Name = Ast.Name,
       Value = Function,
     })
@@ -1843,11 +1843,16 @@ function IrGenerator:GetCurrentScope(State)
   return CurrentContext.Locals
 end
 
-function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode)
+function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode, ExtraStartCode)
   IrGenerator:PushContext(State)
 
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
   Context.Label = Label
+
+  for _, Ir in ipairs(ExtraStartCode or {}) do
+    IrGenerator.Ir = Ir
+    IrGenerator:NewIr(State)
+  end
 
   for _, Child in ipairs(Ast) do
     IrGenerator:Generate(State, Child)
@@ -1990,34 +1995,37 @@ end
 
 function IrGenerator:GenerateFunction(State, Ast, Data)
   local ResultRegister = IrGenerator:AllocateRegister(State)
-
-  local FunctionLabel = IrGenerator:NewLabel(State)
+  local BodyLabel = IrGenerator:NewLabel(State)
 
   IrGenerator.Ir = {
     [1] = "CreateFunction",
-    [2] = FunctionLabel,
+    [2] = BodyLabel,
     [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
 
-  if Ast.Local then
-    IrGenerator:AddLocalVariableRegister(State, Ast.Name, ResultRegister)
-  else
-    if Ast.Name then
-      local NameRegister = IrGenerator:Generate(State, Ast.Name)
+  IrGenerator:PushContext(State)
+  local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
+  Context.Label = BodyLabel
 
-      IrGenerator.Ir = {
-        [1] = "SetGlobal",
-        [2] = NameRegister,
-        [3] = ResultRegister,
-      }
-      IrGenerator:NewIr(State)
-      IrGenerator:MarkNotUsed(State, NameRegister)
-      IrGenerator:MarkNotUsed(State, ResultRegister)
-    end
+  for _, Argument in ipairs(Ast.Arguments) do
+    local ArgumentRegister = IrGenerator:AllocateRegister(State)
+    IrGenerator:AddLocalVariableRegister(State, Argument, ArgumentRegister)
+
+    IrGenerator.Ir = {
+      [1] = "Pop",
+      [2] = ArgumentRegister,
+    }
+    IrGenerator:NewIr(State)
   end
 
-  IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
+  for _, Child in ipairs(Ast.Body) do
+    IrGenerator:Generate(State, Child)
+  end
+
+  IrGenerator:PopContext(State, { {
+    [1] = "Return",
+  } })
 
   return ResultRegister
 end
