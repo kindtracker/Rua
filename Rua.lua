@@ -167,7 +167,7 @@
   Generate Break: Not Implemented
   Generate Method Call: Not Implemented
   Generate If: Not Implemented
-  Generate While: Not Implemented
+  Generate While: Implemented
   Generate Do Block: Not Implemented
   Generate Expression: Not Implemented
   Generate Binary Expression: Not Implemented
@@ -1788,9 +1788,12 @@ function IrGenerator:GenerateWhile(State, Ast, Data)
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
   Context.Label = ConditionLabel
 
+  local ConditionRegister = IrGenerator:Generate(State, Ast.Condition)
+
   IrGenerator.Ir = {
-    [1] = "Jump",
-    [2] = BodyLabel,
+    [1] = "JumpIfTrue",
+    [2] = ConditionRegister,
+    [3] = BodyLabel,
   }
   IrGenerator:NewIr(State)
   IrGenerator:PopContext(State)
@@ -1805,6 +1808,44 @@ function IrGenerator:GenerateWhile(State, Ast, Data)
   IrGenerator.Ir = {
     [1] = "Jump",
     [2] = ConditionLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateBinary(State, Ast, Data)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  local LeftRegister = IrGenerator:Generate(State, Ast.Left, Data)
+  local RightRegister = IrGenerator:Generate(State, Ast.Right, Data)
+
+  local BinaryOpcodes = {
+    ["+"] = "Add",
+    ["-"] = "Sub",
+    ["/"] = "Divide",
+    ["*"] = "Multiply",
+    ["%"] = "Mod",
+    ["^"] = "Pow",
+    ["&"] = "NumberAnd",
+    ["|"] = "NumberOr",
+    ["~"] = "NumberXor",
+    ["=="] = "Equal",
+    ["~="] = "NotEqual",
+    [">="] = "GreaterThanOrEqual",
+    ["<="] = "LessThanOrEqual",
+    [">"] = "GreaterThan",
+    ["<"] = "LessThan",
+    ["and"] = "And",
+    ["or"] = "Or",
+    ["not"] = "Not",
+  }
+  local Opcode = BinaryOpcodes[Ast.Operator]
+
+  IrGenerator.Ir = {
+    [1] = Opcode,
+    [2] = LeftRegister,
+    [3] = RightRegister,
+    [4] = ResultRegister,
   }
   IrGenerator:NewIr(State)
 
@@ -1838,6 +1879,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "While" then
     local ResultRegister = IrGenerator:GenerateWhile(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Binary" then
+    local ResultRegister = IrGenerator:GenerateBinary(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
