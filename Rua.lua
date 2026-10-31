@@ -177,7 +177,7 @@
   Generate Boolean Literal: Implemented
   Generate Nil Literal: Implemented
   Generate Table Constructor: Implemented
-  Generate Table Indexing: Partially Implemented
+  Generate Table Indexing: Implemented
   Generate Member Access: Implemented
   Generate Anonymous Function: Not Implemented
   Generate Conditional Jump: Not Implemented
@@ -467,10 +467,8 @@ function Tokenizer:TokenizePunct(State)
       Tokenizer:Advance(State, Start - Tokenizer.Index)
     end
   elseif Tokenizer.Character == "[" then
-    Tokenizer:Advance(State)
-
-    if StringHasLetter("[=", Tokenizer.Character) then
-      Tokenizer:Advance(State, -1)
+    local Opening = State.File.Content:sub(Tokenizer.Index)
+    if Opening:match("^%[(=*)%[") then
       Tokenizer:TokenizeString(State)
       return
     end
@@ -518,81 +516,112 @@ function Tokenizer:TokenizeNumber(State)
 end
 
 function Tokenizer:TokenizeString(State)
-  local StringCharacter = Tokenizer.Character
-  local String, IsMultipleLineString, StringLevel = "", false, 0
+  local Content = State.File.Content
+  local StartCharacter = Tokenizer.Character
+  local String = ""
+  local IsMultipleLineString = false
+  local StringLevel = 0
 
-  if Tokenizer.Character == "[" then
-    Tokenizer:Advance(State)
+  if StartCharacter == "[" then
+    local Opening = Content:sub(Tokenizer.Index)
+    local Equals = Opening:match("^%[(=*)%[")
 
-    while Tokenizer.Character == "=" do
-      StringLevel = StringLevel + 1
-      Tokenizer:Advance(State)
-    end
-
-    if Tokenizer.Character == "[" then
-      Tokenizer:Advance(State)
+    if Equals ~= nil then
       IsMultipleLineString = true
+      StringLevel = #Equals
+
+      for _ = 1, StringLevel + 2 do
+        Tokenizer:Advance(State)
+      end
+
+      if Tokenizer.Character == "\n" then
+        Tokenizer:Advance(State)
+      end
+    else
+      Tokenizer.Token = {
+        Kind = "Punct",
+        Value = "[",
+      }
+
+      Tokenizer:NewToken(State)
+      Tokenizer:Advance(State)
+      return
+    end
+  else
+    Tokenizer:Advance(State)
+  end
+
+  while #Tokenizer.Character > 0 do
+    if IsMultipleLineString then
+      if Tokenizer.Character == "]" then
+        local Closing = "]" .. string.rep("=", StringLevel) .. "]"
+        local Current = Content:sub(Tokenizer.Index, Tokenizer.Index + #Closing - 1)
+
+        if Current == Closing then
+          for _ = 1, #Closing do
+            Tokenizer:Advance(State)
+          end
+
+          break
+        end
+      end
+
+      String = String .. Tokenizer.Character
+      Tokenizer:Advance(State)
+    else
+      if Tokenizer.Character == StartCharacter then
+        Tokenizer:Advance(State)
+        break
+      elseif Tokenizer.Character == "\n" then
+        Logger:Error(State, "SyntaxError", "Unterminated string")
+        return
+      elseif Tokenizer.Character == "\\" then
+        Tokenizer:Advance(State)
+
+        if #Tokenizer.Character == 0 then
+          Logger:Error(State, "SyntaxError", "Unterminated escape sequence")
+          return
+        end
+
+        local Escape = BaseEscapes[Tokenizer.Character]
+
+        if Escape ~= nil then
+          String = String .. Escape
+          Tokenizer:Advance(State)
+        elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
+          local NumberString = ""
+
+          for _ = 1, 3 do
+            if not StringHasLetter(BaseDigits, Tokenizer.Character) then
+              break
+            end
+
+            NumberString = NumberString .. Tokenizer.Character
+            Tokenizer:Advance(State)
+          end
+
+          local Number = tonumber(NumberString)
+
+          if Number > 255 then
+            Logger:Error(State, "SyntaxError", "Decimal escape too large: %s", NumberString)
+            return
+          end
+
+          String = String .. string.char(Number)
+        else
+          Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
+          return
+        end
+      else
+        String = String .. Tokenizer.Character
+        Tokenizer:Advance(State)
+      end
     end
   end
 
-  Tokenizer:Advance(State)
-
-  while Tokenizer.Character ~= StringCharacter do
-    if Tokenizer.Character == "" then
-      Logger:Error(State, "SyntaxError", "Unterminated string")
-      return
-    elseif Tokenizer.Character == "\\" then
-      Tokenizer:Advance(State)
-
-      if Tokenizer.Character == "" then
-        Logger:Error(State, "SyntaxError", "Unterminated escape sequence")
-        return
-      end
-
-      local Escape = BaseEscapes[Tokenizer.Character]
-
-      if Escape ~= nil then
-        String = String .. Escape
-      elseif StringHasLetter(BaseDigits, Tokenizer.Character) then
-        local StartIndex = Tokenizer.Index
-
-        while StringHasLetter(BaseDigits, Tokenizer.Character) do
-          Tokenizer:Advance(State)
-        end
-        local EndIndex = Tokenizer.Index - 1
-
-        local NumberString = State.File.Content:sub(StartIndex, EndIndex)
-        local Number = tonumber(NumberString)
-        local Character = string.char(Number)
-        String = String .. Character
-      else
-        Logger:Error(State, "SyntaxError", "Invalid escape sequence: \\%s", Tokenizer.Character)
-        return
-      end
-    elseif IsMultipleLineString and Tokenizer.Character == "]" then
-      Tokenizer:Advance(State)
-
-      for Idx = 0, StringLevel do
-        if Tokenizer.Character ~= "]" then
-          goto continue
-        end
-      end
-
-      if Tokenizer.Character == "]" then
-        Tokenizer:Advance(State)
-        break
-      end
-    else
-      String = String .. Tokenizer.Character
-    end
-
-    if #Tokenizer.Character == 0 then
-      Logger:Error(State, "SyntaxError", "Unterminated string")
-    end
-
-    Tokenizer:Advance(State)
-
-    ::continue::
+  if #Tokenizer.Character == 0 then
+    Logger:Error(State, "SyntaxError", "Unterminated string")
+    return
   end
 
   Tokenizer.Token = {
@@ -601,7 +630,6 @@ function Tokenizer:TokenizeString(State)
   }
 
   Tokenizer:NewToken(State)
-  Tokenizer:Advance(State)
 end
 
 function Tokenizer:TokenizeOperator(State)
@@ -692,7 +720,7 @@ function Tokenizer:Tokenize(State)
       Tokenizer:Advance(State)
     else
       Logger:Error(State, "SyntaxError", "Unexpected character: %s", Tokenizer.Character)
-      return
+      Tokenizer:Advance(State)
     end
   end
 end
@@ -971,9 +999,9 @@ function Parser:ParsePrimaryExpression(State)
       end
 
       Node = {
-        Kind = "Index",
+        Kind = "Member",
         Table = Node,
-        Index = Index,
+        Name = Index,
       }
     elseif Parser:Match(State, ":") then
       local Method = Parser.Token
