@@ -1678,17 +1678,17 @@ end
 function AstDesugar:DesugarGenericFor(State, Ast, Table)
   local IteratorName = {
     Kind = "Identifier",
-    Value = GenerateRandomName(),
+    Name = GenerateRandomName(),
   }
 
   local StateName = {
     Kind = "Identifier",
-    Value = GenerateRandomName(),
+    Name = GenerateRandomName(),
   }
 
   local ControlName = {
     Kind = "Identifier",
-    Value = GenerateRandomName(),
+    Name = GenerateRandomName(),
   }
 
   table.insert(Table, {
@@ -1699,7 +1699,7 @@ function AstDesugar:DesugarGenericFor(State, Ast, Table)
       StateName,
       ControlName,
     },
-    Value = Ast.IteratorFactory,
+    Value = { Ast.IteratorFactory },
   })
 
   local WhileBody = {
@@ -1760,8 +1760,8 @@ function AstDesugar:DesugarGenericFor(State, Ast, Table)
 
   table.insert(Table, WhileBody)
 
-  for _, Child in ipairs(WhileBody) do
-    table.insert(WhileBody, Child)
+  for _, Child in ipairs(Ast.Body) do
+    table.insert(WhileBody.Body, Child)
   end
 end
 
@@ -2020,7 +2020,7 @@ function IrGenerator:GenerateString(State, Ast, Data)
 end
 
 function IrGenerator:GenerateFunctionCall(State, Ast, Data)
-  local FunctionRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
+  local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
   local ResultRegister = IrGenerator:AllocateRegister(State)
 
   for Idx = #Ast.Arguments, 1, -1 do
