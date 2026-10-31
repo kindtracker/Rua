@@ -316,6 +316,18 @@ local function PrintTable(Value, Indent)
   end
 end
 
+local function GenerateRandomName()
+  local Characters = BaseIdent .. BaseDigits
+  local Result = {}
+
+  for Idx = 1, 64 do
+    local RandomIndex = math.random(#Characters)
+    Result[Idx] = Characters:sub(RandomIndex, RandomIndex)
+  end
+
+  return "__Rua_BuildTime_TemporaryRandom__" .. table.concat(Result)
+end
+
 function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
   local Format = "%sRua:%s %s:%d:%d: %sError:%s %s: %s\n"
 
@@ -1539,9 +1551,47 @@ function AstDesugar:Desugar(State, Ast)
       Kind = "While",
       Condition = {
         Kind = "Binary",
-        Operator = "<=",
+        Operator = State.Step > 0 and "<=" or ">=",
         Left = Ast.Name,
         Right = Ast.Limit,
+      },
+      Body = Ast.Body,
+    })
+  elseif Ast.Kind == "Repeat" then
+    local FirstIterationName = {
+      Kind = "Identifier",
+      Value = GenerateRandomName(),
+    }
+
+    table.insert(Ast.Body, {
+      Kind = "VariableAssign",
+      Name = FirstIterationName,
+      Value = {
+        Kind = "Boolean",
+        Value = false,
+      },
+    })
+
+    table.insert(Table, {
+      Kind = "VariableAssign",
+      Name = FirstIterationName,
+      Value = {
+        Kind = "Boolean",
+        Value = true,
+      },
+    })
+
+    table.insert(Table, {
+      Kind = "While",
+      Condition = {
+        Kind = "Binary",
+        Operator = "or",
+        Left = {
+          Kind = "Unary",
+          Operator = "not",
+          Operand = Ast.Condition,
+        },
+        Right = FirstIterationName,
       },
       Body = Ast.Body,
     })
@@ -1904,7 +1954,6 @@ function IrGenerator:GenerateBinary(State, Ast, Data)
     ["<"] = "LessThan",
     ["and"] = "And",
     ["or"] = "Or",
-    ["not"] = "Not",
   }
   local Opcode = BinaryOpcodes[Ast.Operator]
 
@@ -1928,6 +1977,7 @@ function IrGenerator:GenerateUnary(State, Ast, Data)
   local UnaryOpcodes = {
     ["-"] = "Negative",
     ["#"] = "Length",
+    ["not"] = "Not",
   }
   local Opcode = UnaryOpcodes[Ast.Operator]
 
