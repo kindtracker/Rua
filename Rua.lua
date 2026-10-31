@@ -1595,6 +1595,15 @@ function AstDesugar:Desugar(State, Ast)
       },
       Body = Ast.Body,
     })
+  elseif Ast.Kind == "Do" then
+    table.insert(Table, {
+      Kind = "If",
+      Condition = {
+        Kind = "Boolean",
+        Value = true,
+      },
+      Body = Ast.Body,
+    })
   else
     return { Ast }
   end
