@@ -163,7 +163,7 @@
   Generate Variable Assignment: Implemented
   Generate Local Statement: Partially Implemented
   Generate Function Declaration: Partially Implemented
-  Generate Return: Not Implemented
+  Generate Return: Partially Implemented
   Generate Break: Not Implemented
   Generate Method Call: Not Implemented
   Generate If: Not Implemented
@@ -1628,7 +1628,7 @@ function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode)
     IrGenerator:Generate(State, Child)
   end
 
-  for _, Ir in ipairs(ExtraCode) do
+  for _, Ir in ipairs(ExtraCode or {}) do
     IrGenerator.Ir = Ir
     IrGenerator:NewIr(State)
   end
@@ -1682,6 +1682,7 @@ end
 
 function IrGenerator:GenerateFunctionCall(State, Ast, Data)
   local FunctionRegister = IrGenerator:Generate(State, Ast.Name)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
 
   for Idx = #Ast.Arguments, 1, -1 do
     local Argument = Ast.Arguments[Idx]
@@ -1700,6 +1701,14 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
   }
   IrGenerator:NewIr(State)
   IrGenerator:MarkNotUsed(State, FunctionRegister)
+
+  IrGenerator.Ir = {
+    [1] = "Pop",
+    [2] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
 end
 
 function IrGenerator:GenerateVariableAssign(State, Ast, Data)
@@ -1872,6 +1881,19 @@ function IrGenerator:GenerateUnary(State, Ast, Data)
   return ResultRegister
 end
 
+function IrGenerator:GenerateReturn(State, Ast, Data)
+  for Idx = #Ast.Value, 1, -1 do
+    local Value = Ast.Value[Idx]
+    local ValueRegister = IrGenerator:Generate(State, Value)
+
+    IrGenerator.Ir = {
+      [1] = "Push",
+      [2] = ValueRegister,
+    }
+    IrGenerator:NewIr(State)
+  end
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -1905,6 +1927,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Unary" then
     local ResultRegister = IrGenerator:GenerateUnary(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Return" then
+    local ResultRegister = IrGenerator:GenerateReturn(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
