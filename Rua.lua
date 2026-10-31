@@ -176,7 +176,7 @@
   Generate String Literal: Implemented
   Generate Boolean Literal: Implemented
   Generate Nil Literal: Implemented
-  Generate Table Constructor: Not Implemented
+  Generate Table Constructor: Implemented
   Generate Table Indexing: Not Implemented
   Generate Member Access: Not Implemented
   Generate Anonymous Function: Not Implemented
@@ -2073,8 +2073,52 @@ function IrGenerator:GenerateIf(State, Ast, Data)
     [3] = BodyLabel,
   }
   IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, ConditionRegister)
 
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
+end
+
+function IrGenerator:GenerateTable(State, Ast, Data)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "NewTable",
+    [2] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  for _, Field in pairs(Ast.Fields) do
+    IrGenerator:Generate(State, Field, ResultRegister)
+  end
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateKeyValue(State, Ast, Data)
+  local KeyRegister = IrGenerator:Generate(State, Ast.Key)
+  local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+  IrGenerator.Ir = {
+    [1] = "NewIndex",
+    [2] = Data,
+    [3] = KeyRegister,
+    [4] = ValueRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, KeyRegister)
+  IrGenerator:MarkNotUsed(State, ValueRegister)
+end
+
+function IrGenerator:GenerateArrayValue(State, Ast, Data)
+  local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+  IrGenerator.Ir = {
+    [1] = "TablePush",
+    [2] = Data,
+    [3] = ValueRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, ValueRegister)
 end
 
 function IrGenerator:Generate(State, Ast, Data)
@@ -2116,6 +2160,15 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "If" then
     local ResultRegister = IrGenerator:GenerateIf(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Table" then
+    local ResultRegister = IrGenerator:GenerateTable(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "KeyValue" then
+    local ResultRegister = IrGenerator:GenerateKeyValue(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "ArrayValue" then
+    local ResultRegister = IrGenerator:GenerateArrayValue(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
