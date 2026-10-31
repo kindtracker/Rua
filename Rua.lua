@@ -167,7 +167,7 @@
   Generate Break: Not Implemented
   Generate Method Call: Implemented
   Generate Numeric For: Implemented
-  Generate Generic For: Not Implemented
+  Generate Generic For: Partially Implemented
   Generate If: Implemented
   Generate While: Implemented
   Generate Expression: Implemented
@@ -182,8 +182,6 @@
   Generate Table Indexing: Implemented
   Generate Member Access: Implemented
   Generate Anonymous Function: Implemented
-  Generate Conditional Jump: Not Implemented
-  Generate Unconditional Jump: Not Implemented
   Generate Labels: Implemented
 ]]
 
@@ -1354,13 +1352,12 @@ function Parser:ParseFor(State, Statement)
       Value = ",",
     }) then
       Parser:Advance(State)
-      Statement.ValueVariable = Parser.Token.Value
-      Parser:Advance(State)
+      Statement.ValueVariable = Parser:ParseName(State)
     end
     Parser:Expect(State, "Keyword", "in")
 
-    local Iterator = Parser:ParseExpression(State)
-    Statement.Iterator = Iterator
+    local IteratorFactory = Parser:ParseExpression(State)
+    Statement.IteratorFactory = IteratorFactory
   end
 
   Parser:Expect(State, "Keyword", "do")
@@ -1678,6 +1675,96 @@ function AstDesugar:DesugarFunctionCall(State, Ast, Table)
   })
 end
 
+function AstDesugar:DesugarGenericFor(State, Ast, Table)
+  local IteratorName = {
+    Kind = "Identifier",
+    Value = GenerateRandomName(),
+  }
+
+  local StateName = {
+    Kind = "Identifier",
+    Value = GenerateRandomName(),
+  }
+
+  local ControlName = {
+    Kind = "Identifier",
+    Value = GenerateRandomName(),
+  }
+
+  table.insert(Table, {
+    Kind = "VariableAssign",
+    Local = true,
+    Name = {
+      IteratorName,
+      StateName,
+      ControlName,
+    },
+    Value = Ast.IteratorFactory,
+  })
+
+  local WhileBody = {
+    Kind = "While",
+    Local = false,
+    Condition = {
+      Kind = "Boolean",
+      Value = true,
+    },
+    Body = {
+      {
+        Kind = "VariableAssign",
+        Local = true,
+        Name = {
+          Ast.KeyVariable,
+          Ast.ValueVariable,
+        },
+        Value = {
+          Kind = "FunctionCall",
+          Local = false,
+          Arguments = {
+            StateName,
+            ControlName,
+          },
+          Name = IteratorName,
+        },
+      },
+      {
+        Kind = "If",
+        Local = false,
+        Condition = {
+          Kind = "Binary",
+          Operator = "==",
+          Left = Ast.KeyVariable,
+          Right = {
+            Kind = "Nil",
+          },
+        },
+        Body = {
+          {
+            Kind = "Break",
+            Local = false,
+          },
+        },
+      },
+      {
+        Kind = "VariableAssign",
+        Local = false,
+        Name = {
+          ControlName,
+        },
+        Value = {
+          Ast.KeyVariable,
+        },
+      },
+    },
+  }
+
+  table.insert(Table, WhileBody)
+
+  for _, Child in ipairs(WhileBody) do
+    table.insert(WhileBody, Child)
+  end
+end
+
 function AstDesugar:Desugar(State, Ast)
   local Table = {}
 
@@ -1687,6 +1774,8 @@ function AstDesugar:Desugar(State, Ast)
 
   if Ast.Kind == "For" and Ast.Start then
     AstDesugar:DesugarFor(State, Ast, Table)
+  elseif Ast.Kind == "For" and not Ast.Start then
+    AstDesugar:DesugarGenericFor(State, Ast, Table)
   elseif Ast.Kind == "Repeat" then
     AstDesugar:DesugarRepeat(State, Ast, Table)
   elseif Ast.Kind == "Do" then
@@ -2044,8 +2133,6 @@ end
 function IrGenerator:GenerateFunction(State, Ast, Data)
   local ResultRegister = IrGenerator:AllocateRegister(State)
   local BodyLabel = IrGenerator:NewLabel(State)
-
-  print(BodyLabel, ResultRegister)
 
   IrGenerator.Ir = {
     [1] = "CreateFunction",
