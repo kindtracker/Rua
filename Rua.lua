@@ -1642,6 +1642,10 @@ function IrGenerator:Reset(State)
   State.Ir = {}
 end
 
+function IrGenerator:ConvertAstToString(Ast)
+  return Ast.Name
+end
+
 function IrGenerator:NewLabel(State)
   local Label = IrGenerator.LabelId
   IrGenerator.LabelId = IrGenerator.LabelId + 1
@@ -1753,35 +1757,34 @@ function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode)
   } })
 end
 
+function IrGenerator:AddLocalVariableRegister(State, Ast, VariableRegister)
+  local AstString = IrGenerator:ConvertAstToString(Ast)
+  local CurrentScope = IrGenerator:GetCurrentScope(State)
+  CurrentScope[AstString] = VariableRegister
+end
+
 function IrGenerator:GenerateIdentifier(State, Ast, Data)
-  if Data then
-    for Idx = #IrGenerator.Contexts, 1, -1 do
-      local Scope = IrGenerator.Contexts[Idx].Locals
-      local VariableRegister = Scope[Ast.Name]
+  local AstString = IrGenerator:ConvertAstToString(Ast)
+  for Idx = #IrGenerator.Contexts, 1, -1 do
+    local Scope = IrGenerator.Contexts[Idx].Locals
+    local VariableRegister = Scope[AstString]
 
-      if VariableRegister then
-        return VariableRegister
-      end
+    if VariableRegister then
+      return VariableRegister
     end
-
-    local CurrentScope = IrGenerator:GetCurrentScope(State)
-    local VariableRegister = IrGenerator:AllocateRegister(State)
-    CurrentScope[Ast.Name] = VariableRegister
-
-    return VariableRegister
-  else
-    local ResultRegister = IrGenerator:AllocateRegister(State)
-    local NameRegister = IrGenerator:Generate(State, Ast.Name)
-
-    IrGenerator.Ir = {
-      [1] = "GetVariable",
-      [2] = NameRegister,
-      [3] = ResultRegister,
-    }
-    IrGenerator:NewIr(State)
-    IrGenerator:MarkNotUsed(State, NameRegister)
-    return ResultRegister
   end
+
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  local NameRegister = IrGenerator:Generate(State, Ast.Name)
+
+  IrGenerator.Ir = {
+    [1] = "GetVariable",
+    [2] = NameRegister,
+    [3] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, NameRegister)
+  return ResultRegister
 end
 
 function IrGenerator:GenerateString(State, Ast, Data)
@@ -1830,8 +1833,12 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
 end
 
 function IrGenerator:GenerateVariableAssign(State, Ast, Data)
-  local VariableRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
+  local VariableRegister = IrGenerator:Generate(State, Ast.Name)
   local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+  if Ast.Local then
+    IrGenerator:AddLocalVariableRegister(State, Ast.Name, VariableRegister)
+  end
 
   IrGenerator.Ir = {
     [1] = "Copy",
@@ -1844,25 +1851,22 @@ function IrGenerator:GenerateVariableAssign(State, Ast, Data)
 end
 
 function IrGenerator:GenerateFunction(State, Ast, Data)
-  local NameRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
   local ResultRegister = IrGenerator:AllocateRegister(State)
 
   local FunctionLabel = IrGenerator:NewLabel(State)
 
   IrGenerator.Ir = {
     [1] = "CreateFunction",
-    [2] = NameRegister,
-    [3] = FunctionLabel,
-    [4] = ResultRegister,
+    [2] = FunctionLabel,
+    [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
 
   if Ast.Local then
-    IrGenerator:MarkNotUsed(State, NameRegister)
-
-    local CurrentScope = IrGenerator:GetCurrentScope(State)
-    CurrentScope[Ast.Name] = ResultRegister
+    IrGenerator:AddLocalVariableRegister(State, Ast.Name, ResultRegister)
   else
+    local NameRegister = IrGenerator:Generate(State, Ast.Name)
+
     IrGenerator.Ir = {
       [1] = "SetGlobal",
       [2] = NameRegister,
