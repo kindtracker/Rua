@@ -1636,6 +1636,19 @@ function AstDesugar:Desugar(State, Ast)
       },
       Body = Ast.Body,
     })
+  elseif Ast.Kind == "Function" and Ast.Name.Kind == "Member" then
+    local Function = {
+      Kind = "Function",
+      Arguments = Ast.Arguments,
+      Body = Ast.Body,
+    }
+
+    table.insert(Table, {
+      Kind = "VariableAssign",
+      Local = false,
+      Name = Ast.Name,
+      Value = Function,
+    })
   else
     return { Ast }
   end
@@ -1903,6 +1916,26 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
 end
 
 function IrGenerator:GenerateVariableAssign(State, Ast, Data)
+  if Ast.Name.Kind == "Member" then
+    local TableRegister = IrGenerator:Generate(State, Ast.Name.Table)
+    local KeyRegister = IrGenerator:Generate(State, Ast.Name.Name)
+    local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+    IrGenerator.Ir = {
+      [1] = "NewIndex",
+      [2] = TableRegister,
+      [3] = KeyRegister,
+      [4] = ValueRegister,
+    }
+    IrGenerator:NewIr(State)
+
+    IrGenerator:MarkNotUsed(State, TableRegister)
+    IrGenerator:MarkNotUsed(State, KeyRegister)
+    IrGenerator:MarkNotUsed(State, ValueRegister)
+
+    return
+  end
+
   local VariableRegister = IrGenerator:Generate(State, Ast.Name, Ast.Local)
   local ValueRegister = IrGenerator:Generate(State, Ast.Value)
 
@@ -1920,6 +1953,7 @@ function IrGenerator:GenerateVariableAssign(State, Ast, Data)
     [3] = VariableRegister,
   }
   IrGenerator:NewIr(State)
+
   IrGenerator:MarkNotUsed(State, VariableRegister)
   IrGenerator:MarkNotUsed(State, ValueRegister)
 end
@@ -1939,19 +1973,23 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   if Ast.Local then
     IrGenerator:AddLocalVariableRegister(State, Ast.Name, ResultRegister)
   else
-    local NameRegister = IrGenerator:Generate(State, Ast.Name)
+    if Ast.Name then
+      local NameRegister = IrGenerator:Generate(State, Ast.Name)
 
-    IrGenerator.Ir = {
-      [1] = "SetGlobal",
-      [2] = NameRegister,
-      [3] = ResultRegister,
-    }
-    IrGenerator:NewIr(State)
-    IrGenerator:MarkNotUsed(State, NameRegister)
-    IrGenerator:MarkNotUsed(State, ResultRegister)
+      IrGenerator.Ir = {
+        [1] = "SetGlobal",
+        [2] = NameRegister,
+        [3] = ResultRegister,
+      }
+      IrGenerator:NewIr(State)
+      IrGenerator:MarkNotUsed(State, NameRegister)
+      IrGenerator:MarkNotUsed(State, ResultRegister)
+    end
   end
 
   IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
+
+  return ResultRegister
 end
 
 function IrGenerator:GenerateNumber(State, Ast, Data)
