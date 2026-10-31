@@ -1577,17 +1577,16 @@ end
 
 function IrGenerator:PopContext(State)
   local Context = table.remove(IrGenerator.Contexts)
-
   local Parent = IrGenerator.Contexts[#IrGenerator.Contexts]
+
+  table.insert(Context.IrProgram, {
+    [1] = "PopContext",
+  })
+
   if Parent then
     Context.Parent = Parent
     table.insert(IrGenerator.Functions, Context)
   else
-    IrGenerator.Ir = {
-      [1] = "PopContext",
-    }
-    IrGenerator:NewIr(State)
-
     for _, Ir in ipairs(Context.IrProgram) do
       table.insert(State.Ir, Ir)
     end
