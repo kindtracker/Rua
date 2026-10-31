@@ -166,9 +166,8 @@
   Generate Return: Partially Implemented
   Generate Break: Not Implemented
   Generate Method Call: Not Implemented
-  Generate If: Not Implemented
+  Generate If: Implemented
   Generate While: Implemented
-  Generate Do Block: Not Implemented
   Generate Expression: Implemented
   Generate Binary Expression: Implemented
   Generate Unary Expression: Implemented
@@ -1513,6 +1512,10 @@ end
 function AstDesugar:Desugar(State, Ast)
   local Table = {}
 
+  if Ast.Body then
+    AstDesugar:DesugarAst(State, Ast.Body)
+  end
+
   if Ast.Kind == "VariableAssign" then
     for Idx, Name in ipairs(Ast.Name) do
       local Value = Ast.Value[Idx]
@@ -1667,13 +1670,17 @@ function IrGenerator:PushContext(State)
   IrGenerator:NewIr(State)
 end
 
-function IrGenerator:PopContext(State)
+function IrGenerator:PopContext(State, ExtraCode)
   local Context = table.remove(IrGenerator.Contexts)
   local Parent = IrGenerator.Contexts[#IrGenerator.Contexts]
 
   table.insert(Context.IrProgram, {
     [1] = "PopContext",
   })
+
+  for _, Ir in ipairs(ExtraCode or {}) do
+    table.insert(Context.IrProgram, Ir)
+  end
 
   if Parent then
     Context.Parent = Parent
@@ -1741,7 +1748,9 @@ function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode)
     IrGenerator:NewIr(State)
   end
 
-  IrGenerator:PopContext(State)
+  IrGenerator:PopContext(State, { {
+    [1] = "Return",
+  } })
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast, Data)
@@ -2015,6 +2024,20 @@ function IrGenerator:GenerateReturn(State, Ast, Data)
   end
 end
 
+function IrGenerator:GenerateIf(State, Ast, Data)
+  local BodyLabel = IrGenerator:NewLabel(State)
+  local ConditionRegister = IrGenerator:Generate(State, Ast.Condition, Data)
+
+  IrGenerator.Ir = {
+    [1] = "JumpIfTrue",
+    [2] = ConditionRegister,
+    [3] = BodyLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
+end
+
 function IrGenerator:Generate(State, Ast, Data)
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
@@ -2051,6 +2074,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Return" then
     local ResultRegister = IrGenerator:GenerateReturn(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "If" then
+    local ResultRegister = IrGenerator:GenerateIf(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(
