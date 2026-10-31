@@ -1603,7 +1603,22 @@ function IrGenerator:AllocateRegister(State)
 end
 
 function IrGenerator:MarkNotUsed(State, Register)
-  IrGenerator.Registers[Register] = false
+  local IsLocal = false
+
+  for Idx = #IrGenerator.Contexts, 1, -1 do
+    local Scope = IrGenerator.Contexts[Idx].Locals
+
+    for _, VariableRegister in pairs(Scope) do
+      if VariableRegister == Register then
+        IsLocal = true
+        break
+      end
+    end
+  end
+
+  if not IsLocal then
+    IrGenerator.Registers[Register] = false
+  end
 end
 
 function IrGenerator:NewIr(State)
@@ -1663,6 +1678,7 @@ function IrGenerator:GenerateIdentifier(State, Ast, Data)
     }
     IrGenerator:NewIr(State)
     IrGenerator:MarkNotUsed(State, NameRegister)
+    IrGenerator:MarkNotUsed(State, ResultRegister)
     return ResultRegister
   end
 end
@@ -1693,6 +1709,7 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
       [2] = ArgumentRegister,
     }
     IrGenerator:NewIr(State)
+    IrGenerator:MarkNotUsed(State, ArgumentRegister)
   end
 
   IrGenerator.Ir = {
@@ -1739,16 +1756,22 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   }
   IrGenerator:NewIr(State)
 
-  IrGenerator:MarkNotUsed(State, NameRegister)
-
   if Ast.Local then
+    IrGenerator:MarkNotUsed(State, NameRegister)
+
     local CurrentScope = IrGenerator:GetCurrentScope(State)
     CurrentScope[Ast.Name] = ResultRegister
+  else
+    IrGenerator.Ir = {
+      [1] = "SetGlobal",
+      [2] = NameRegister,
+      [3] = ResultRegister,
+    }
+    IrGenerator:NewIr(State)
+    IrGenerator:MarkNotUsed(State, NameRegister)
   end
 
   IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
-
-  return ResultRegister
 end
 
 function IrGenerator:GenerateNumber(State, Ast, Data)
@@ -1805,6 +1828,7 @@ function IrGenerator:GenerateWhile(State, Ast, Data)
     [3] = BodyLabel,
   }
   IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, ConditionRegister)
   IrGenerator:PopContext(State)
 
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel, {
@@ -1857,6 +1881,8 @@ function IrGenerator:GenerateBinary(State, Ast, Data)
     [4] = ResultRegister,
   }
   IrGenerator:NewIr(State)
+  IrGenerator:MarkNotUsed(State, LeftRegister)
+  IrGenerator:MarkNotUsed(State, RightRegister)
 
   return ResultRegister
 end
@@ -1877,6 +1903,7 @@ function IrGenerator:GenerateUnary(State, Ast, Data)
     [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
+  rGenerator:MarkNotUsed(State, OperandRegister)
 
   return ResultRegister
 end
@@ -1891,6 +1918,7 @@ function IrGenerator:GenerateReturn(State, Ast, Data)
       [2] = ValueRegister,
     }
     IrGenerator:NewIr(State)
+    IrGenerator:MarkNotUsed(State, ValueRegister)
   end
 end
 
@@ -1943,7 +1971,11 @@ end
 
 function IrGenerator:GenerateIr(State)
   for _, Ast in ipairs(State.Ast) do
-    IrGenerator:Generate(State, Ast)
+    local ResultRegister = IrGenerator:Generate(State, Ast)
+
+    if ResultRegister then
+      IrGenerator:MarkNotUsed(State, ResultRegister)
+    end
   end
   IrGenerator:PopContext(State)
 end
