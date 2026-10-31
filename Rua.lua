@@ -320,12 +320,12 @@ local function GenerateRandomName()
   local Characters = BaseIdent .. BaseDigits
   local Result = {}
 
-  for Idx = 1, 64 do
+  for Idx = 1, 16 do
     local RandomIndex = math.random(#Characters)
     Result[Idx] = Characters:sub(RandomIndex, RandomIndex)
   end
 
-  return "__Rua_BuildTime_TemporaryRandom__" .. table.concat(Result)
+  return "__Rua_" .. table.concat(Result)
 end
 
 function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
@@ -1560,7 +1560,7 @@ function AstDesugar:Desugar(State, Ast)
   elseif Ast.Kind == "Repeat" then
     local FirstIterationName = {
       Kind = "Identifier",
-      Value = GenerateRandomName(),
+      Name = GenerateRandomName(),
     }
 
     table.insert(Ast.Body, {
@@ -1987,7 +1987,7 @@ function IrGenerator:GenerateUnary(State, Ast, Data)
     [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
-  rGenerator:MarkNotUsed(State, OperandRegister)
+  IrGenerator:MarkNotUsed(State, OperandRegister)
 
   return ResultRegister
 end
