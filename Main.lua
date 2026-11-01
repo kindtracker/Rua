@@ -1,4 +1,5 @@
 local Rua = require("Rua")
+local CBackend = require("CBackend")
 
 local State = Rua.new()
 
@@ -15,4 +16,7 @@ if FileName == nil then
   return
 end
 
-local Result, Error = Rua:Run(State, FileName)
+State:UseBackend(CBackend)
+
+local Result, Error = Rua:Compile(State, FileName, FileName .. ".c")
+print(Result)

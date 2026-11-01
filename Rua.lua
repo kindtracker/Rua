@@ -167,7 +167,7 @@
   Generate Break: Implemented
   Generate Method Call: Implemented
   Generate Numeric For: Implemented
-  Generate Generic For: Partially Implemented
+  Generate Generic For: Implemented
   Generate If: Implemented
   Generate While: Implemented
   Generate Expression: Implemented
@@ -186,7 +186,7 @@
 ]]
 
 local Rua = {}
--- Rua.Version = "0.0.1"
+Rua.Version = "0.1.0"
 
 local Ansi = {
   Reset = "\27[0m",
@@ -2435,8 +2435,6 @@ function IrGenerator:GenerateBreak(State, Ast, Data)
 end
 
 function IrGenerator:Generate(State, Ast, Data)
-  print(Ast.Kind)
-
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
     return ResultRegister
@@ -2576,17 +2574,24 @@ function Rua:GenerateLuaIr(State)
 end
 
 function Rua.new()
-  return {
+  local State = {
     File = {
       Content = "",
     },
     Tokens = {},
     Ast = {},
     Ir = {},
+    Backend = nil,
   }
+
+  function State:UseBackend(Backend)
+    State.Backend = Backend
+  end
+
+  return State
 end
 
-function Rua:Run(State, FileName)
+function Rua:Compile(State, FileName, OutputFile, Data)
   local FilePtr, Error = io.open(FileName, "r")
   if not FilePtr then
     return nil, Error
@@ -2596,24 +2601,25 @@ function Rua:Run(State, FileName)
   FilePtr:close()
 
   Rua:Tokenize(State)
-  PrintTable(State.Tokens)
+  -- PrintTable(State.Tokens)
 
   Rua:Parse(State)
-  PrintTable(State.Ast)
+  -- PrintTable(State.Ast)
 
   Rua:Desugar(State)
-  PrintTable(State.Ast)
+  -- PrintTable(State.Ast)
 
   Rua:GenerateIr(State)
-  PrintTable(State.Ir)
 
   if Rua.DevMode then
     Rua:GenerateLuaIr(State)
+
     local IrFile = io.open("Dev.lua", "w")
     IrFile:write(State.LuaIr)
+    IrFile:close()
   end
 
-  return nil, nil
+  return State.Backend:Compile(State, FileName, OutputFile, Data)
 end
 
 return Rua
