@@ -8,7 +8,11 @@ function CBackend:PutRuntimeStart(State)
   CBackend:PutFormatted(
     State,
     [[
+#include <string.h>
 #include <stdbool.h>
+
+#define REGISTER_COUNT 256
+#define STACK_COUNT 256
 
 typedef enum {
   Nil,
@@ -17,31 +21,33 @@ typedef enum {
   String,
   Function,
   Table
+} ValueTypeEnum;
+
+typedef struct {
+  ValueTypeEnum Type;
+  void *Value;
 } ValueType;
 
 typedef struct {
-  ValueType Type;
-  void *Value;
-} Value;
-
-#define REGISTER_COUNT 256
-#define STACK_COUNT 256
+  const char *Name;
+  ValueType *Value;
+} VariableType;
 
 uint32_t Pc = 0;
 bool Running = true;
 
-Value Registers[REGISTER_COUNT];
-Value Stack[STACK_COUNT];
+Value *Registers[REGISTER_COUNT];
+Value *Stack[STACK_COUNT];
 int StackSize;
 
-void Push(Value Register) {
+void Push(Value *Register) {
   if (StackSize > STACK_COUNT) {
     Running = false;
   }
-  Stack[StackSize++] = *Register;
+  Stack[StackSize++] = Register;
 }
 
-Value Pop() {
+Value *Pop() {
   if (StackSize < 0) {
     Running = false;
   }
@@ -66,6 +72,9 @@ function CBackend:PutRuntimeEnd(State)
 }
 
 int main() {
+  memset(&Registers, 0, sizeof(Registers));
+  memset(&Stack, 0, sizeof(Stack));
+
   while (Running) {
     Execute();
     Pc++;
@@ -79,7 +88,7 @@ function CBackend:GenerateLoadString(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      Value *Register = GetRegister(%d);
+      ValueType *Register = GetRegister(%d);
       Register->Type = RuaTypeString;
       Register->Value = %q;
 ]],
@@ -92,8 +101,20 @@ function CBackend:GeneratePush(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      Value *Register = GetRegister(%d);
+      ValueType *Register = GetRegister(%d);
       Push(*Register);
+]],
+    Ir[2]
+  )
+end
+
+function CBackend:GeneratePop(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      ValueType *Register = GetRegister(%d);
+      ValueType Value = Pop();
+      memcpy(Register, &Value, sizeof(ValueType));
 ]],
     Ir[2]
   )
@@ -109,17 +130,45 @@ function CBackend:GenerateClearStack(State, Ir)
   )
 end
 
+function CBackend:GenerateGetVariable(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      ValueType *ResultRegister = GetRegister(%d)
+      ValueType *NameRegister = GetRegister(%d)
+      const char *Name = NameRegister->Value;
+
+      for (int Idx = 0; Idx < sizeof(Variables) / sizeof(Value); Idx++) {
+        VariableType *Variable = Variables[Idx];
+
+        if (strcmp(Variable->Name, Name) == 0) {
+          memcpy(ResultRegister, &Value, sizeof(ValueType));
+          break;
+        }
+      }
+
+      PutNil(ResultRegister);
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     LoadString = CBackend.GenerateLoadString,
     Push = CBackend.GeneratePush,
+    Pop = CBackend.GeneratePop,
     ClearStack = CBackend.GenerateClearStack,
+    GetVariable = CBackend.GenerateGetVariable,
   }
 
   local IrInstruction = Ir[1]
   if GenerateIrTable[IrInstruction] then
     GenerateIrTable[IrInstruction](CBackend, State, Ir)
-    CBackend:PutFormatted(State, "\n")
+    CBackend:PutFormatted(State, [[
+      break
+]] .. "\n")
   else
     CBackend:PutFormatted(
       State,
