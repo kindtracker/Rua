@@ -10,8 +10,43 @@ function CBackend:PutRuntimeStart(State)
     [[
 #include <stdbool.h>
 
+typedef enum {
+  Nil,
+  Boolean,
+  Number,
+  String,
+  Function,
+  Table
+} ValueType;
+
+typedef struct {
+  ValueType Type;
+  void *Value;
+} Value;
+
+#define REGISTER_COUNT 256
+#define STACK_COUNT 256
+
 uint32_t Pc = 0;
 bool Running = true;
+
+Value Registers[REGISTER_COUNT];
+Value Stack[STACK_COUNT];
+int StackSize;
+
+void Push(Value Register) {
+  if (StackSize > STACK_COUNT) {
+    Running = false;
+  }
+  Stack[StackSize++] = *Register;
+}
+
+Value Pop() {
+  if (StackSize < 0) {
+    Running = false;
+  }
+  return Stack[StackSize--];
+}
 
 void Execute() {
   switch (Pc) {
@@ -44,7 +79,7 @@ function CBackend:GenerateLoadString(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      RegisterType *Register = GetRegister(%d);
+      Value *Register = GetRegister(%d);
       Register->Type = RuaTypeString;
       Register->Value = %q;
 ]],
@@ -53,9 +88,32 @@ function CBackend:GenerateLoadString(State, Ir)
   )
 end
 
+function CBackend:GeneratePush(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      Value *Register = GetRegister(%d);
+      Push(*Register);
+]],
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateClearStack(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      memset(&Stack, 0, sizeof(Stack));
+]],
+    Ir[2]
+  )
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     LoadString = CBackend.GenerateLoadString,
+    Push = CBackend.GeneratePush,
+    ClearStack = CBackend.GenerateClearStack,
   }
 
   local IrInstruction = Ir[1]
