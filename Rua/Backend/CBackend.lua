@@ -15,14 +15,12 @@ local CBackend = {}
   Generate Push: Implemented
   Generate Pop: Implemented
   Generate ClearStack: Implemented
-  Generate CallFunction: implementation
-  Generate Return: implementation
+  Generate CallFunction: Implemented
+  Generate Return: Implemented
   Generate TablePush: Implemented
-  Generate CreateFunction: Not Implemented
+  Generate NewFunction: Not Implemented
   Generate Index: Not Implemented
   Generate NewIndex: Not Implemented
-  Generate AstLabel: Not Implemented
-  Generate AstGoto: Not Implemented
 
   Generate Add: Implemented
   Generate Subtract: Implemented
@@ -491,9 +489,7 @@ void RuaPushCFunction(RuaCFunction Function) {
 end
 
 function CBackend:PutLuaRuntime(State)
-  CBackend:PutFormatted(
-    State,
-    [[
+  CBackend:PutFormatted(State, [[
 static void Print() {
   const char *String = RuaPopString();
   printf("%%s\n", String);
@@ -503,8 +499,7 @@ static void LuaRuntimeInitialize() {
   RuaPushCFunction(Print);
   RuaSetGlobal("print");
 }
-]]
-  )
+]] .. "\n")
 end
 
 function CBackend:GenerateLoadString(State, Ir)
@@ -1121,7 +1116,6 @@ static void Execute() {
   )
 
   CBackend:GenerateBlock(State, State.Ir)
-
   for _, Function in ipairs(State.IrFunctions) do
     CBackend:PutFormatted(State, "\n")
 
@@ -1136,16 +1130,13 @@ static void Execute() {
     CBackend:GenerateBlock(State, Function)
   end
 
-  CBackend:PutFormatted(
-    State,
-    [[
+  CBackend:PutFormatted(State, [[
   default:
     Crash("0x%%x: Execute: Program counter out of bounds", Pc);
     break;
   }
 }
-    ]]
-  )
+]] .. "\n")
 
   CBackend:PutRuntimeEnd(State)
 

@@ -1816,8 +1816,10 @@ end
 function IrGenerator:Reset(State)
   IrGenerator.Contexts = {}
   State.IrFunctions = {}
+  IrGenerator.Pc = 0
   IrGenerator.EndLabels = {}
   IrGenerator.AstLabels = {}
+  IrGenerator.Labels = {}
   IrGenerator.LabelId = 1
 
   State.Ir = {}
@@ -2137,9 +2139,9 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   local BodyLabel = IrGenerator:NewLabel(State)
 
   IrGenerator.Ir = {
-    [1] = "CreateFunction",
-    [2] = BodyLabel,
-    [3] = ResultRegister,
+    [1] = "NewFunction",
+    [2] = ResultRegister,
+    [3] = BodyLabel,
   }
   IrGenerator:NewIr(State)
 
@@ -2506,6 +2508,36 @@ function IrGenerator:Generate(State, Ast, Data)
   end
 end
 
+function IrGenerator:CountPc(State, IrProgram)
+  IrGenerator.Pc = IrGenerator.Pc + #IrProgram
+end
+
+function IrGenerator:FindLabels(State)
+  IrGenerator.Labels = {}
+  IrGenerator.Pc = 1
+
+  IrGenerator:CountPc(State, State.Ir)
+
+  for _, Function in ipairs(State.IrFunctions) do
+    IrGenerator.Labels[Function.Label] = IrGenerator.Pc
+    IrGenerator:CountPc(State, Function.IrProgram)
+  end
+end
+
+function IrGenerator:ResolveLabels(State, IrProgram)
+  for _, Ir in ipairs(IrProgram) do
+    if Ir[1]:find("Jump") or Ir[1] == "Function" then
+      local LabelAddress = IrGenerator.Labels[Ir[#Ir]]
+
+      if not LabelAddress then
+        Logger:Error(State, "InternalError", "Couldn't resolve label %s", tostring(Ir[#Ir]))
+      else
+        Ir[#Ir] = LabelAddress
+      end
+    end
+  end
+end
+
 function IrGenerator:GenerateIr(State)
   IrGenerator:PushContext(State)
 
@@ -2518,6 +2550,12 @@ function IrGenerator:GenerateIr(State)
   end
 
   IrGenerator:PopContext(State)
+
+  IrGenerator:FindLabels(State)
+  IrGenerator:ResolveLabels(State, State.Ir)
+  for _, Function in ipairs(State.IrFunctions) do
+    IrGenerator:ResolveLabels(State, Function.IrProgram)
+  end
 end
 
 function IrGenerator:GenerateLuaIr(State)
