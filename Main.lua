@@ -19,4 +19,3 @@ end
 State:UseBackend(CBackend)
 
 local Result, Error = Rua:Compile(State, FileName, FileName .. ".c")
-print(Result)

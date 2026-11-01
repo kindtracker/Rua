@@ -581,6 +581,12 @@ function CBackend:GeneratePopContext(State, Ir)
     State,
     [[
     free(CurrentContext);
+
+    if (CallStackSize <= 0) {
+      Running = false;
+      return;
+    }
+
     CallFrameType Frame = CallStack[--CallStackSize];
     CurrentContext = Frame.PreviousContext;
     Return();
@@ -682,8 +688,8 @@ function CBackend:GenerateGetGlobal(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Result = GetRegister(%d);
     ValueType *Name = GetRegister(%d);
+    ValueType *Result = GetRegister(%d);
 
     if (Result && Name && Name->Type == RuaString) {
       *Result = GetGlobal(Name->Value.String);

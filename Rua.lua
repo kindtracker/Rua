@@ -1992,9 +1992,10 @@ function IrGenerator:GenerateIdentifier(State, Ast, Data)
     end
   end
 
+  local ResultRegister
   if not Data then
-    local ResultRegister = IrGenerator:AllocateRegister(State)
     local NameRegister = IrGenerator:Generate(State, Ast.Name)
+    ResultRegister = IrGenerator:AllocateRegister(State)
 
     IrGenerator.Ir = {
       [1] = "GetGlobal",
