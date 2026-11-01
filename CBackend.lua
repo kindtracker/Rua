@@ -89,10 +89,11 @@ function CBackend:PutRuntimeStart(State)
 #define CALLSTACK_CAPACITY 256
 #define GLOBAL_CAPACITY 256
 
-#define Crash(...)           \
-  do {                       \
+#define Crash(...)              \
+  do {                           \
     fprintf(stderr, __VA_ARGS__); \
-    exit(1);                 \
+    fputc('\n', stderr);          \
+    exit(1);                     \
   } while (0)
 
 typedef enum {
