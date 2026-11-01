@@ -1997,7 +1997,7 @@ function IrGenerator:GenerateIdentifier(State, Ast, Data)
     local NameRegister = IrGenerator:Generate(State, Ast.Name)
 
     IrGenerator.Ir = {
-      [1] = "GetVariable",
+      [1] = "GetGlobal",
       [2] = NameRegister,
       [3] = ResultRegister,
     }
@@ -2042,7 +2042,7 @@ function IrGenerator:GenerateFunctionCall(State, Ast, Data)
   end
 
   IrGenerator.Ir = {
-    [1] = "CallFunctionFromRegister",
+    [1] = "CallFunction",
     [2] = FunctionRegister,
   }
   IrGenerator:NewIr(State)

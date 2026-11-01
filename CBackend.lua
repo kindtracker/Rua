@@ -4,19 +4,18 @@ local CBackend = {}
   CBackend:
 
   Generate NewContext: Not Implemented
-  Generate NewTable: Not Implemented
+  Generate NewTable: Partially Implemented
   Generate Copy: Not Implemented
   Generate LoadString: Implemented
-  Generate LoadNumber: Not Implemented
-  Generate LoadBoolean: Not Implemented
-  Generate LoadNil: Not Implemented
-  Generate GetVariable: Implemented
-  Generate SetVariable: Not Implemented
+  Generate LoadNumber: Implemented
+  Generate LoadBoolean: Implemented
+  Generate LoadNil: Implemented
+  Generate GetGlobal: Implemented
+  Generate SetGlobal: Not Implemented
   Generate Push: Implemented
   Generate Pop: Implemented
   Generate ClearStack: Implemented
-  Generate CallFunction: Not Implemented
-  Generate CallFunctionFromRegister: Not Implemented
+  Generate CallFunction: Implemented
   Generate Return: Not Implemented
   Generate Add: Not Implemented
   Generate Subtract: Not Implemented
@@ -56,22 +55,33 @@ function CBackend:PutRuntimeStart(State)
 #include <string.h>
 #include <stdbool.h>
 
-#define REGISTER_COUNT 256
-#define STACK_COUNT 256
+#define REGISTER_CAPACITY 256
+#define STACK_CAPACITY 256
+#define CALLSTACK_CAPACITY 256
 
 typedef enum {
-  Nil,
-  Boolean,
-  Number,
-  String,
-  Function,
-  Table
+  TypeNil,
+  TypeBoolean,
+  TypeNumber,
+  TypeString,
+  TypeFunction,
+  TypeTable
 } ValueTypeEnum;
 
 typedef struct {
   ValueTypeEnum Type;
   void *Value;
 } ValueType;
+
+typedef struct {
+  ValueType *Items;
+  size_t Count;
+  size_t Capacity;
+} TableType;
+
+typedef struct {
+  int Label;
+} FunctionType;
 
 typedef struct {
   const char *Name;
@@ -81,12 +91,12 @@ typedef struct {
 uint32_t Pc = 0;
 bool Running = true;
 
-Value *Registers[REGISTER_COUNT];
-Value *Stack[STACK_COUNT];
+Value *Registers[REGISTER_CAPACITY];
+Value *Stack[STACK_CAPACITY];
 int StackSize;
 
 void Push(ValueType *Register) {
-  if (StackSize > STACK_COUNT) {
+  if (StackSize > STACK_CAPACITY) {
     Running = false;
   }
   Stack[StackSize++] = Register;
@@ -100,6 +110,10 @@ Value *Pop() {
 }
 
 void PutNil(ValueType *Register) {
+  Register->Type = Nil;
+}
+
+void PutJump(ValueType *Register) {
   Register->Type = Nil;
 }
 
@@ -138,7 +152,7 @@ function CBackend:GenerateLoadString(State, Ir)
     State,
     [[
       ValueType *Register = GetRegister(%d);
-      Register->Type = RuaTypeString;
+      Register->Type = TypeString;
       Register->Value = %q;
 ]],
     Ir[3],
@@ -179,7 +193,7 @@ function CBackend:GenerateClearStack(State, Ir)
   )
 end
 
-function CBackend:GenerateGetVariable(State, Ir)
+function CBackend:GenerateGetGlobal(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
@@ -203,13 +217,99 @@ function CBackend:GenerateGetVariable(State, Ir)
   )
 end
 
+function CBackend:GenerateLoadNumber(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      ValueType *ResultRegister = GetRegister(%d)
+      ResultRegister->Type = TypeNumber;
+      ResultRegister->Value = %d;
+]],
+    Ir[3],
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateLoadBoolean(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      ValueType *ResultRegister = GetRegister(%d)
+      ResultRegister->Type = TypeBoolean;
+      ResultRegister->Value = %s;
+]],
+    Ir[3],
+    Ir[2] == true and "true" or "false"
+  )
+end
+
+function CBackend:GenerateLoadNil(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      ValueType *ResultRegister = GetRegister(%d)
+      ResultRegister->Type = TypeNil;
+]],
+    Ir[3],
+    Ir[2] == true and "true" or "false"
+  )
+end
+
+function CBackend:GenerateNewTable(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      TableType *Table = malloc(sizeof(TableType));
+      if (!Table) {
+        Running = false;
+        return NULL;
+      }
+
+      Table->Count = 0;
+      Table->Capacity = Capacity;
+      Table->Items = calloc(Capacity, sizeof(ValueType));
+      if (Capacity > 0 && !Table->Items) {
+        free(Table);
+        Running = false;
+        return NULL;
+      }
+
+      memset(Table, 0, sizeof(TableType));
+      memset(Table->Items, 0, sizeof(ValueType) * Capacity);
+
+      ValueType *ResultRegister = GetRegister(%d);
+      ResultRegister->Type = TypeTable;
+      ResultRegister->Value = Table;
+]],
+    Ir[3],
+    Ir[2] == true and "true" or "false"
+  )
+end
+
+function CBackend:GenerateCallFunction(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      ValueType *ResultRegister = GetRegister(%d);
+      FunctionType *Function = (FunctionType)ResultRegister->Value;
+      Pc = Function->Address;
+  ]],
+    Ir[2]
+  )
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     LoadString = CBackend.GenerateLoadString,
     Push = CBackend.GeneratePush,
     Pop = CBackend.GeneratePop,
     ClearStack = CBackend.GenerateClearStack,
-    GetVariable = CBackend.GenerateGetVariable,
+    GetGlobal = CBackend.GenerateGetGlobal,
+    LoadNumber = CBackend.GenerateLoadNumber,
+    LoadBoolean = CBackend.GenerateLoadBoolean,
+    LoadNil = CBackend.GenerateLoadNil,
+    NewTable = CBackend.GenerateNewTable,
+    CallFunction = CBackend.GenerateCallFunction,
   }
 
   local IrInstruction = Ir[1]
