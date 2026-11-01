@@ -160,7 +160,7 @@ int CallStackSize = 0;
 GlobalType Globals[GLOBAL_CAPACITY];
 size_t GlobalCount = 0;
 
-ContextType *CreateContext(void) {
+static ContextType *CreateContext(void) {
   ContextType *Context = calloc(1, sizeof(ContextType));
 
   if (!Context) {
@@ -170,7 +170,7 @@ ContextType *CreateContext(void) {
   return Context;
 }
 
-void NewContext(void) {
+static void NewContext(void) {
   ContextType *Context = CreateContext();
 
   if (!Context) {
@@ -184,7 +184,7 @@ void NewContext(void) {
   CurrentContext = Context;
 }
 
-ValueType *GetRegister(int Register) {
+static ValueType *GetRegister(int Register) {
   if (!CurrentContext ||
       Register < 0 ||
       Register >= REGISTER_CAPACITY) {
@@ -194,19 +194,19 @@ ValueType *GetRegister(int Register) {
   return &CurrentContext->Registers[Register];
 }
 
-ValueType CreateNil(void) {
+static ValueType CreateNil(void) {
   ValueType Result = {0};
   Result.Type = RuaNil;
   return Result;
 }
 
-void PutNil(ValueType *Register) {
+static void PutNil(ValueType *Register) {
   if (Register) {
     *Register = CreateNil();
   }
 }
 
-void Push(ValueType *Register) {
+static void Push(ValueType *Register) {
   if (!Register) {
     Crash("0x%%x: Push: Attempt to push a NULL register", Pc);
   }
@@ -218,7 +218,7 @@ void Push(ValueType *Register) {
   Stack[StackSize++] = *Register;
 }
 
-ValueType Pop(void) {
+static ValueType Pop(void) {
   if (StackSize <= 0) {
     Crash("0x%%x: Pop: Attempt to pop from an empty stack", Pc);
   }
@@ -226,12 +226,12 @@ ValueType Pop(void) {
   return Stack[--StackSize];
 }
 
-void ClearStack(void) {
+static void ClearStack(void) {
   memset(Stack, 0, sizeof(Stack));
   StackSize = 0;
 }
 
-TableType *NewTable(size_t Capacity) {
+static TableType *NewTable(size_t Capacity) {
   TableType *Table = calloc(1, sizeof(TableType));
 
   if (!Table) {
@@ -252,7 +252,7 @@ TableType *NewTable(size_t Capacity) {
   return Table;
 }
 
-void TablePush(TableType *Table, ValueType Value) {
+static void TablePush(TableType *Table, ValueType Value) {
   if (!Table) {
     Crash("0x%%x: TablePush: Attempt to push a value into a non-table", Pc);
   }
@@ -278,7 +278,7 @@ void TablePush(TableType *Table, ValueType Value) {
   Table->Items[Table->Count++] = Value;
 }
 
-void SetGlobal(const char *Name, ValueType Value) {
+static void SetGlobal(const char *Name, ValueType Value) {
   for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
     if (strcmp(Globals[Idx].Name, Name) == 0) {
       Globals[Idx].Value = Value;
@@ -295,7 +295,7 @@ void SetGlobal(const char *Name, ValueType Value) {
   GlobalCount++;
 }
 
-ValueType GetGlobal(const char *Name) {
+static ValueType GetGlobal(const char *Name) {
   for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
     if (strcmp(Globals[Idx].Name, Name) == 0) {
       return Globals[Idx].Value;
@@ -305,7 +305,7 @@ ValueType GetGlobal(const char *Name) {
   return CreateNil();
 }
 
-void Jump(uint32_t TargetPc) {
+static void Jump(uint32_t TargetPc) {
   if (CallStackSize >= CALLSTACK_CAPACITY) {
     Crash("0x%%x: Jump: CallStack overflow (Capacity %%d)", Pc, CALLSTACK_CAPACITY);
   }
@@ -320,7 +320,7 @@ void Jump(uint32_t TargetPc) {
   Pc = TargetPc - 1;
 }
 
-void Return(void) {
+static void Return(void) {
   if (CallStackSize <= 0) {
     Crash("0x%%x: Return: Attempt to return without an active function call", Pc);
   }
@@ -333,7 +333,7 @@ void Return(void) {
   Pc = Frame.ReturnAddress;
 }
 
-void Execute(void) {
+static void Execute(void) {
   switch (Pc) {
     // Main
 ]]
