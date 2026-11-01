@@ -89,6 +89,12 @@ function CBackend:PutRuntimeStart(State)
 #define CALLSTACK_CAPACITY 256
 #define GLOBAL_CAPACITY 256
 
+#define Crash(...)           \
+  do {                       \
+    fprintf(stderr, __VA_ARGS__); \
+    exit(1);                 \
+  } while (0)
+
 typedef enum {
   RuaNil,
   RuaBoolean,
@@ -157,7 +163,7 @@ ContextType *CreateContext(void) {
   ContextType *Context = calloc(1, sizeof(ContextType));
 
   if (!Context) {
-    Crash("0x%x: CreateContext: Failed to allocate context", Pc);
+    Crash("0x%%x: CreateContext: Failed to allocate context", Pc);
   }
 
   return Context;
@@ -181,7 +187,7 @@ ValueType *GetRegister(int Register) {
   if (!CurrentContext ||
       Register < 0 ||
       Register >= REGISTER_CAPACITY) {
-    Crash("0x%x: GetRegister: Invalid register access (Register %d)", Pc, Register);
+    Crash("0x%%x: GetRegister: Invalid register access (Register %%d)", Pc, Register);
   }
 
   return &CurrentContext->Registers[Register];
@@ -201,11 +207,11 @@ void PutNil(ValueType *Register) {
 
 void Push(ValueType *Register) {
   if (!Register) {
-    Crash("0x%x: Push: Attempt to push a NULL register", Pc);
+    Crash("0x%%x: Push: Attempt to push a NULL register", Pc);
   }
 
   if (StackSize >= STACK_CAPACITY) {
-    Crash("0x%x: Push: Stack overflow (Capacity %d)", Pc, STACK_CAPACITY);
+    Crash("0x%%x: Push: Stack overflow (Capacity %%d)", Pc, STACK_CAPACITY);
   }
 
   Stack[StackSize++] = *Register;
@@ -213,7 +219,7 @@ void Push(ValueType *Register) {
 
 ValueType Pop(void) {
   if (StackSize <= 0) {
-    Crash("0x%x: Pop: Attempt to pop from an empty stack", Pc);
+    Crash("0x%%x: Pop: Attempt to pop from an empty stack", Pc);
   }
 
   return Stack[--StackSize];
@@ -228,7 +234,7 @@ TableType *NewTable(size_t Capacity) {
   TableType *Table = calloc(1, sizeof(TableType));
 
   if (!Table) {
-    Crash("0x%x: NewTable: Failed to allocate table", Pc);
+    Crash("0x%%x: NewTable: Failed to allocate table", Pc);
   }
 
   Table->Capacity = Capacity;
@@ -238,7 +244,7 @@ TableType *NewTable(size_t Capacity) {
 
     if (!Table->Items) {
       free(Table);
-      Crash("0x%x: NewTable: Failed to allocate table items (Capacity %zu)", Pc, Capacity);
+      Crash("0x%%x: NewTable: Failed to allocate table items (Capacity %%zu)", Pc, Capacity);
     }
   }
 
@@ -247,7 +253,7 @@ TableType *NewTable(size_t Capacity) {
 
 void TablePush(TableType *Table, ValueType Value) {
   if (!Table) {
-    Crash("0x%x: TablePush: Attempt to push a value into a non-table", Pc);
+    Crash("0x%%x: TablePush: Attempt to push a value into a non-table", Pc);
   }
 
   if (Table->Count >= Table->Capacity) {
@@ -261,7 +267,7 @@ void TablePush(TableType *Table, ValueType Value) {
     );
 
     if (!NewItems) {
-      Crash("0x%x: TablePush: Failed to reallocate table items (Capacity %zu -> %zu)", Pc, Table->Capacity, NewCapacity);
+      Crash("0x%%x: TablePush: Failed to reallocate table items (Capacity %%zu -> %%zu)", Pc, Table->Capacity, NewCapacity);
     }
 
     Table->Items = NewItems;
@@ -280,7 +286,7 @@ void SetGlobal(const char *Name, ValueType Value) {
   }
 
   if (GlobalCount >= GLOBAL_CAPACITY) {
-    Crash("0x%x: SetGlobal: Global table overflow (Capacity %d)", Pc, GLOBAL_CAPACITY);
+    Crash("0x%%x: SetGlobal: Global table overflow (Capacity %%d)", Pc, GLOBAL_CAPACITY);
   }
 
   Globals[GlobalCount].Name = Name;
@@ -300,7 +306,7 @@ ValueType GetGlobal(const char *Name) {
 
 void Jump(uint32_t TargetPc) {
   if (CallStackSize >= CALLSTACK_CAPACITY) {
-    Crash("0x%x: Jump: CallStack overflow (Capacity %d)", Pc, CALLSTACK_CAPACITY);
+    Crash("0x%%x: Jump: CallStack overflow (Capacity %%d)", Pc, CALLSTACK_CAPACITY);
   }
 
   ContextType *Context = CreateContext();
@@ -315,7 +321,7 @@ void Jump(uint32_t TargetPc) {
 
 void Return(void) {
   if (CallStackSize <= 0) {
-    Crash("0x%x: Return: Attempt to return without an active function call", Pc);
+    Crash("0x%%x: Return: Attempt to return without an active function call", Pc);
   }
 
   CallFrameType Frame = CallStack[--CallStackSize];
@@ -325,10 +331,6 @@ void Return(void) {
   CurrentContext = Frame.PreviousContext;
   Pc = Frame.ReturnAddress;
 }
-
-#define Crash(...)                                                             \
-  fprintf(stderr, ...);                                                        \
-  exit(1)
 
 void Execute(void) {
   switch (Pc) {
@@ -342,7 +344,7 @@ function CBackend:PutRuntimeEnd(State)
     State,
     [[
   default:
-    Crash("0x%x: Execute: Program counter out of bounds", Pc);
+    Crash("0x%%x: Execute: Program counter out of bounds", Pc);
     break;
   }
 }
@@ -584,7 +586,7 @@ function CBackend:GenerateCallFunction(State, Ir)
         Register->Value.Function) {
       Jump(Register->Value.Function->Address);
     } else {
-      Crash("0x%x: CallFunction: Attempt to call a value a non-function value (Register %d)", Pc, %d);
+      Crash("0x%%x: CallFunction: Attempt to call a value a non-function value (Register %%d)", Pc, %d);
     }
 ]],
     Ir[2],
