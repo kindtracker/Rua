@@ -15,30 +15,31 @@ local CBackend = {}
   Generate Push: Implemented
   Generate Pop: Implemented
   Generate ClearStack: Implemented
-  Generate CallFunction: Basic implementation
-  Generate Return: Basic implementation
+  Generate CallFunction: implementation
+  Generate Return: implementation
   Generate TablePush: Implemented
-  Generate Add: Not Implemented
-  Generate Subtract: Not Implemented
-  Generate Multiply: Not Implemented
-  Generate Divide: Not Implemented
-  Generate Modulo: Not Implemented
-  Generate Power: Not Implemented
-  Generate Negate: Not Implemented
-  Generate Not: Not Implemented
-  Generate And: Not Implemented
-  Generate Or: Not Implemented
-  Generate Equal: Not Implemented
-  Generate NotEqual: Not Implemented
-  Generate LessThan: Not Implemented
-  Generate LessThanOrEqual: Not Implemented
-  Generate GreaterThan: Not Implemented
-  Generate GreaterThanOrEqual: Not Implemented
+  Generate CreateFunction: Not Implemented
   Generate Index: Not Implemented
   Generate NewIndex: Not Implemented
   Generate AstLabel: Not Implemented
   Generate AstGoto: Not Implemented
-  Generate CreateFunction: Not Implemented
+
+  Generate Add: Implemented
+  Generate Subtract: Implemented
+  Generate Multiply: Implemented
+  Generate Divide: Implemented
+  Generate Modulo: Implemented
+  Generate Power: Implemented
+  Generate Negate: Implemented
+  Generate Not: Implemented
+  Generate And: Implemented
+  Generate Or: Implemented
+  Generate Equal: Implemented
+  Generate NotEqual: Implemented
+  Generate LessThan: Implemented
+  Generate LessThanOrEqual: Implemented
+  Generate GreaterThan: Implemented
+  Generate GreaterThanOrEqual: Implemented
 ]]
 
 function CBackend:PutFormatted(State, ...)
@@ -77,6 +78,7 @@ function CBackend:PutRuntimeStart(State)
   CBackend:PutFormatted(
     State,
     [[
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -747,6 +749,278 @@ function CBackend:GenerateReturn(State, Ir)
   )
 end
 
+local function GenerateNumericBinary(State, Ir, Name, Expression)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (LeftRegister->Type != RuaNumber ||
+        RightRegister->Type != RuaNumber) {
+      Crash("0x%%x: %s: Expected number operands", Pc);
+    }
+
+    ResultRegister->Type = RuaNumber;
+    ResultRegister->Value.Number = %s;
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4],
+    Name,
+    Expression
+  )
+end
+
+local function GenerateComparison(State, Ir, Name, Operator)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    int Comparison = 0;
+
+    if (LeftRegister->Type == RuaNumber &&
+        RightRegister->Type == RuaNumber) {
+      double Left = LeftRegister->Value.Number;
+      double Right = RightRegister->Value.Number;
+
+      Comparison = (Left > Right) - (Left < Right);
+    } else if (LeftRegister->Type == RuaString &&
+               RightRegister->Type == RuaString) {
+      Comparison = strcmp(
+        LeftRegister->Value.String,
+        RightRegister->Value.String
+      );
+    } else {
+      Crash("0x%%x: %s: Expected two numbers or two strings", Pc);
+    }
+
+    ResultRegister->Type = RuaBoolean;
+    ResultRegister->Value.Boolean = Comparison %s 0;
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4],
+    Name,
+    Operator
+  )
+end
+
+local function GenerateEquality(State, Ir, Negate)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    bool Equal = false;
+
+    if (LeftRegister->Type == RightRegister->Type) {
+      switch (LeftRegister->Type) {
+        case RuaNil:
+          Equal = true;
+          break;
+
+        case RuaBoolean:
+          Equal = LeftRegister->Value.Boolean ==
+            RightRegister->Value.Boolean;
+          break;
+
+        case RuaNumber:
+          Equal = LeftRegister->Value.Number ==
+            RightRegister->Value.Number;
+          break;
+
+        case RuaString:
+          Equal = strcmp(
+            LeftRegister->Value.String,
+            RightRegister->Value.String
+          ) == 0;
+          break;
+
+        case RuaFunction:
+          Equal = LeftRegister->Value.Function ==
+            RightRegister->Value.Function;
+          break;
+
+        case RuaTable:
+          Equal = LeftRegister->Value.Table ==
+            RightRegister->Value.Table;
+          break;
+      }
+    }
+
+    ResultRegister->Type = RuaBoolean;
+    ResultRegister->Value.Boolean = %s;
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4],
+    Negate and "!Equal" or "Equal"
+  )
+end
+
+function CBackend:GenerateAdd(State, Ir)
+  GenerateNumericBinary(State, Ir, "Add", "LeftRegister->Value.Number + RightRegister->Value.Number")
+end
+
+function CBackend:GenerateSubtract(State, Ir)
+  GenerateNumericBinary(State, Ir, "Subtract", "LeftRegister->Value.Number - RightRegister->Value.Number")
+end
+
+function CBackend:GenerateMultiply(State, Ir)
+  GenerateNumericBinary(State, Ir, "Multiply", "LeftRegister->Value.Number * RightRegister->Value.Number")
+end
+
+function CBackend:GenerateDivide(State, Ir)
+  GenerateNumericBinary(State, Ir, "Divide", "LeftRegister->Value.Number / RightRegister->Value.Number")
+end
+
+function CBackend:GenerateModulo(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (LeftRegister->Type != RuaNumber ||
+        RightRegister->Type != RuaNumber) {
+      Crash("0x%%x: Modulo: Expected number operands", Pc);
+    }
+
+    double Left = LeftRegister->Value.Number;
+    double Right = RightRegister->Value.Number;
+    double Value = fmod(Left, Right);
+
+    if (Value != 0.0 &&
+        ((Value < 0.0) != (Right < 0.0))) {
+      Value += Right;
+    }
+
+    ResultRegister->Type = RuaNumber;
+    ResultRegister->Value.Number = Value;
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
+  )
+end
+
+function CBackend:GeneratePower(State, Ir)
+  GenerateNumericBinary(State, Ir, "Power", "pow(LeftRegister->Value.Number, RightRegister->Value.Number)")
+end
+
+function CBackend:GenerateNegate(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *OperandRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (OperandRegister->Type != RuaNumber) {
+      Crash("0x%%x: Negate: Expected a number", Pc);
+    }
+
+    ResultRegister->Type = RuaNumber;
+    ResultRegister->Value.Number = -OperandRegister->Value.Number;
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
+function CBackend:GenerateNot(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *OperandRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    ResultRegister->Type = RuaBoolean;
+    ResultRegister->Value.Boolean =
+      OperandRegister->Type == RuaNil ||
+      (OperandRegister->Type == RuaBoolean &&
+       !OperandRegister->Value.Boolean);
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
+function CBackend:GenerateAnd(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (LeftRegister->Type == RuaNil ||
+        (LeftRegister->Type == RuaBoolean &&
+         !LeftRegister->Value.Boolean)) {
+      *ResultRegister = *LeftRegister;
+    } else {
+      *ResultRegister = *RightRegister;
+    }
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
+  )
+end
+
+function CBackend:GenerateOr(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (LeftRegister->Type == RuaNil ||
+        (LeftRegister->Type == RuaBoolean &&
+         !LeftRegister->Value.Boolean)) {
+      *ResultRegister = *RightRegister;
+    } else {
+      *ResultRegister = *LeftRegister;
+    }
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
+  )
+end
+
+function CBackend:GenerateEqual(State, Ir)
+  GenerateEquality(State, Ir, false)
+end
+
+function CBackend:GenerateNotEqual(State, Ir)
+  GenerateEquality(State, Ir, true)
+end
+
+function CBackend:GenerateLessThan(State, Ir)
+  GenerateComparison(State, Ir, "LessThan", "<")
+end
+
+function CBackend:GenerateLessThanOrEqual(State, Ir)
+  GenerateComparison(State, Ir, "LessThanOrEqual", "<=")
+end
+
+function CBackend:GenerateGreaterThan(State, Ir)
+  GenerateComparison(State, Ir, "GreaterThan", ">")
+end
+
+function CBackend:GenerateGreaterThanOrEqual(State, Ir)
+  GenerateComparison(State, Ir, "GreaterThanOrEqual", ">=")
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     NewContext = CBackend.GenerateNewContext,
@@ -765,6 +1039,22 @@ function CBackend:Generate(State, Ir)
     TablePush = CBackend.GenerateTablePush,
     CallFunction = CBackend.GenerateCallFunction,
     Return = CBackend.GenerateReturn,
+    Add = CBackend.GenerateAdd,
+    Sub = CBackend.GenerateSubtract,
+    Multiply = CBackend.GenerateMultiply,
+    Divide = CBackend.GenerateDivide,
+    Mod = CBackend.GenerateModulo,
+    Pow = CBackend.GeneratePower,
+    Negative = CBackend.GenerateNegate,
+    Not = CBackend.GenerateNot,
+    And = CBackend.GenerateAnd,
+    Or = CBackend.GenerateOr,
+    Equal = CBackend.GenerateEqual,
+    NotEqual = CBackend.GenerateNotEqual,
+    LessThan = CBackend.GenerateLessThan,
+    LessThanOrEqual = CBackend.GenerateLessThanOrEqual,
+    GreaterThan = CBackend.GenerateGreaterThan,
+    GreaterThanOrEqual = CBackend.GenerateGreaterThanOrEqual,
   }
 
   local GenerateIr = GenerateIrTable[Ir[1]]
