@@ -186,7 +186,7 @@
 ]]
 
 local Rua = {}
-Rua.Version = "0.1.0"
+Rua.Version = "0.1.1"
 
 local Ansi = {
   Reset = "\27[0m",
