@@ -1,12 +1,12 @@
-local Rua = require("Rua")
-local CBackend = require("CBackend")
+local Rua = require("Rua.Rua")
+local CBackend = require("Rua.Backend.CBackend")
 
 local State = Rua.new()
 
 local FileName = nil
 for ArgumentIndex, Argument in ipairs(arg) do
-  if Argument == "+DevMode" then
-    Rua.DevMode = true
+  if Argument == "_DevMode" then
+    Rua._DevMode = true
   else
     FileName = Argument
   end

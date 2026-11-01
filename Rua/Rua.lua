@@ -350,7 +350,7 @@ function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
 
   State.Stop = true
 
-  if Rua.DevMode then
+  if Rua._DevMode then
     io.write(
       string.format(
         "%sLua:%s traceback:\n%s\n",
@@ -2612,10 +2612,10 @@ function Rua:Compile(State, FileName, OutputFile, Data)
 
   Rua:GenerateIr(State)
 
-  if Rua.DevMode then
+  if Rua._DevMode then
     Rua:GenerateLuaIr(State)
 
-    local IrFile = io.open("Dev.lua", "w")
+    local IrFile = io.open("Dev/Ir.lua", "w")
     IrFile:write(State.LuaIr)
     IrFile:close()
   end
