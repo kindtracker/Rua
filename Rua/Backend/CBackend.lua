@@ -93,6 +93,7 @@ function CBackend:PutRuntimeStart(State)
 
 #define Crash(...)              \
   do {                           \
+    fflush(stdout);               \
     fprintf(stderr, __VA_ARGS__); \
     fputc('\n', stderr);          \
     exit(1);                     \
@@ -323,7 +324,7 @@ static void Jump(uint32_t TargetPc) {
   Frame->ReturnAddress = Pc;
 
   CurrentContext = Context;
-  Pc = TargetPc - 1;
+  Pc = TargetPc;
 }
 
 static void Return() {
@@ -579,16 +580,13 @@ function CBackend:GeneratePopContext(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    free(CurrentContext);
-
     if (CallStackSize <= 0) {
+      free(CurrentContext);
+      CurrentContext = NULL;
       Running = false;
-      return;
+    } else {
+      Return();
     }
-
-    CallFrameType Frame = CallStack[--CallStackSize];
-    CurrentContext = Frame.PreviousContext;
-    Return();
 ]]
   )
 end
@@ -1054,12 +1052,9 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
     [[
     ValueType *ValueRegister = GetRegister(%d);
 
-    if (ValueRegister->Type == RuaBoolean) {
-      if (ValueRegister->Value.Boolean == true) {
-        Jump(%d);
-      }
-    } else if (ValueRegister->Type == RuaNil) {
-    } else {
+    if (ValueRegister->Type != RuaNil &&
+        !(ValueRegister->Type == RuaBoolean &&
+          !ValueRegister->Value.Boolean)) {
       Jump(%d);
     }
 ]],
@@ -1174,7 +1169,6 @@ static void Execute() {
   CBackend:GenerateBlock(State, State.Ir)
   for _, Function in ipairs(State.IrFunctions) do
     CBackend:PutFormatted(State, "\n")
-
     CBackend:PutFormatted(
       State,
       [[
@@ -1183,7 +1177,7 @@ static void Execute() {
       Function.Label
     )
 
-    CBackend:GenerateBlock(State, Function)
+    CBackend:GenerateBlock(State, Function.IrProgram)
   end
 
   CBackend:PutFormatted(State, [[
