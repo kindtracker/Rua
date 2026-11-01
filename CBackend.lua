@@ -1,5 +1,50 @@
 local CBackend = {}
 
+--[[
+  CBackend:
+
+  Generate NewContext: Not Implemented
+  Generate NewTable: Not Implemented
+  Generate Copy: Not Implemented
+  Generate LoadString: Implemented
+  Generate LoadNumber: Not Implemented
+  Generate LoadBoolean: Not Implemented
+  Generate LoadNil: Not Implemented
+  Generate GetVariable: Implemented
+  Generate SetVariable: Not Implemented
+  Generate Push: Implemented
+  Generate Pop: Implemented
+  Generate ClearStack: Implemented
+  Generate CallFunction: Not Implemented
+  Generate CallFunctionFromRegister: Not Implemented
+  Generate Return: Not Implemented
+  Generate Add: Not Implemented
+  Generate Subtract: Not Implemented
+  Generate Multiply: Not Implemented
+  Generate Divide: Not Implemented
+  Generate Modulo: Not Implemented
+  Generate Power: Not Implemented
+  Generate Negate: Not Implemented
+  Generate Not: Not Implemented
+  Generate And: Not Implemented
+  Generate Or: Not Implemented
+  Generate Equal: Not Implemented
+  Generate NotEqual: Not Implemented
+  Generate LessThan: Not Implemented
+  Generate LessThanOrEqual: Not Implemented
+  Generate GreaterThan: Not Implemented
+  Generate GreaterThanOrEqual: Not Implemented
+  Generate Index: Not Implemented
+  Generate NewIndex: Not Implemented
+  Generate TablePush: Not Implemented
+  Generate Label: Not Implemented
+  Generate Goto: Not Implemented
+  Generate Break: Not Implemented
+  Generate Function: Not Implemented
+  Generate If: Not Implemented
+  Generate While: Not Implemented
+]]
+
 function CBackend:PutFormatted(State, ...)
   State.CCode = State.CCode .. string.format(...)
 end
@@ -40,7 +85,7 @@ Value *Registers[REGISTER_COUNT];
 Value *Stack[STACK_COUNT];
 int StackSize;
 
-void Push(Value *Register) {
+void Push(ValueType *Register) {
   if (StackSize > STACK_COUNT) {
     Running = false;
   }
@@ -52,6 +97,10 @@ Value *Pop() {
     Running = false;
   }
   return Stack[StackSize--];
+}
+
+void PutNil(ValueType *Register) {
+  Register->Type = Nil;
 }
 
 void Execute() {
