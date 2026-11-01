@@ -157,8 +157,7 @@ ContextType *CreateContext(void) {
   ContextType *Context = calloc(1, sizeof(ContextType));
 
   if (!Context) {
-    Running = false;
-    return NULL;
+    Crash("0x%x: CreateContext: Failed to allocate context", Pc);
   }
 
   return Context;
@@ -182,8 +181,7 @@ ValueType *GetRegister(int Register) {
   if (!CurrentContext ||
       Register < 0 ||
       Register >= REGISTER_CAPACITY) {
-    Running = false;
-    return NULL;
+    Crash("0x%x: GetRegister: Invalid register access (Register %d)", Pc, Register);
   }
 
   return &CurrentContext->Registers[Register];
@@ -202,9 +200,12 @@ void PutNil(ValueType *Register) {
 }
 
 void Push(ValueType *Register) {
-  if (!Register || StackSize >= STACK_CAPACITY) {
-    Running = false;
-    return;
+  if (!Register) {
+    Crash("0x%x: Push: Attempt to push a NULL register", Pc);
+  }
+
+  if (StackSize >= STACK_CAPACITY) {
+    Crash("0x%x: Push: Stack overflow (Capacity %d)", Pc, STACK_CAPACITY);
   }
 
   Stack[StackSize++] = *Register;
@@ -212,8 +213,7 @@ void Push(ValueType *Register) {
 
 ValueType Pop(void) {
   if (StackSize <= 0) {
-    Running = false;
-    return CreateNil();
+    Crash("0x%x: Pop: Attempt to pop from an empty stack", Pc);
   }
 
   return Stack[--StackSize];
@@ -228,8 +228,7 @@ TableType *NewTable(size_t Capacity) {
   TableType *Table = calloc(1, sizeof(TableType));
 
   if (!Table) {
-    Running = false;
-    return NULL;
+    Crash("0x%x: NewTable: Failed to allocate table", Pc);
   }
 
   Table->Capacity = Capacity;
@@ -239,8 +238,7 @@ TableType *NewTable(size_t Capacity) {
 
     if (!Table->Items) {
       free(Table);
-      Running = false;
-      return NULL;
+      Crash("0x%x: NewTable: Failed to allocate table items (Capacity %zu)", Pc, Capacity);
     }
   }
 
@@ -249,8 +247,7 @@ TableType *NewTable(size_t Capacity) {
 
 void TablePush(TableType *Table, ValueType Value) {
   if (!Table) {
-    Running = false;
-    return;
+    Crash("0x%x: TablePush: Attempt to push a value into a non-table", Pc);
   }
 
   if (Table->Count >= Table->Capacity) {
@@ -264,8 +261,7 @@ void TablePush(TableType *Table, ValueType Value) {
     );
 
     if (!NewItems) {
-      Running = false;
-      return;
+      Crash("0x%x: TablePush: Failed to reallocate table items (Capacity %zu -> %zu)", Pc, Table->Capacity, NewCapacity);
     }
 
     Table->Items = NewItems;
@@ -284,8 +280,7 @@ void SetGlobal(const char *Name, ValueType Value) {
   }
 
   if (GlobalCount >= GLOBAL_CAPACITY) {
-    Running = false;
-    return;
+    Crash("0x%x: SetGlobal: Global table overflow (Capacity %d)", Pc, GLOBAL_CAPACITY);
   }
 
   Globals[GlobalCount].Name = Name;
@@ -305,16 +300,10 @@ ValueType GetGlobal(const char *Name) {
 
 void Jump(uint32_t TargetPc) {
   if (CallStackSize >= CALLSTACK_CAPACITY) {
-    Running = false;
-    return;
+    Crash("0x%x: Jump: CallStack overflow (Capacity %d)", Pc, CALLSTACK_CAPACITY);
   }
 
   ContextType *Context = CreateContext();
-
-  if (!Context) {
-    return;
-  }
-
   CallFrameType *Frame = &CallStack[CallStackSize++];
 
   Frame->PreviousContext = CurrentContext;
@@ -326,8 +315,7 @@ void Jump(uint32_t TargetPc) {
 
 void Return(void) {
   if (CallStackSize <= 0) {
-    Running = false;
-    return;
+    Crash("0x%x: Return: Attempt to return without an active function call", Pc);
   }
 
   CallFrameType Frame = CallStack[--CallStackSize];
@@ -337,6 +325,10 @@ void Return(void) {
   CurrentContext = Frame.PreviousContext;
   Pc = Frame.ReturnAddress;
 }
+
+#define Crash(...)                                                             \
+  fprintf(stderr, ...);                                                        \
+  exit(1)
 
 void Execute(void) {
   switch (Pc) {
@@ -350,7 +342,7 @@ function CBackend:PutRuntimeEnd(State)
     State,
     [[
   default:
-    Running = false;
+    Crash("0x%x: Execute: Program counter out of bounds", Pc);
     break;
   }
 }
@@ -467,8 +459,8 @@ function CBackend:GenerateCopy(State, Ir)
     ValueType *Source = GetRegister(%d);
     ValueType *Destination = GetRegister(%d);
 
-    if (Source && Destination) {
-      *Destination = *Source;
+    if (SourceRegister && DestinationRegister) {
+      *DestinationRegister = *SourceRegister;
     }
 ]],
     Ir[2],
@@ -480,11 +472,11 @@ function CBackend:GenerateNewTable(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Result = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
 
     if (Result) {
-      Result->Type = RuaTable;
-      Result->Value.Table = NewTable(%d);
+      ResultRegister->Type = RuaTable;
+      ResultRegister->Value.Table = NewTable(%d);
     }
 ]],
     Ir[3],
@@ -504,11 +496,12 @@ function CBackend:GenerateTablePush(State, Ir)
         TableRegister->Type == RuaTable) {
       TablePush(TableRegister->Value.Table, *ValueRegister);
     } else {
-      Running = false;
+      Crash("0x%x: TablePush: Attempt to push a value into a non-table (Register %d)", Pc, Register);
     }
 ]],
     Ir[2],
-    Ir[3]
+    Ir[3],
+    Ir[2]
   )
 end
 
@@ -591,9 +584,10 @@ function CBackend:GenerateCallFunction(State, Ir)
         Register->Value.Function) {
       Jump(Register->Value.Function->Address);
     } else {
-      Running = false;
+      Crash("0x%x: CallFunction: Attempt to call a value a non-function value (Register %d)", Pc, %d);
     }
 ]],
+    Ir[2],
     Ir[2]
   )
 end
