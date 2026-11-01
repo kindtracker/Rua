@@ -48,7 +48,7 @@ void RuaPushBoolean(bool Value);
 void RuaPushNumber(double Value);
 void RuaPushString(const char *Value);
 void RuaCreateTable();
-RuaValueType RuaCreateCFunction(RuaCFunction Function);
+void RuaPushCFunction(RuaCFunction Function);
 
 void RuaPop();
 double RuaPopNumber();

@@ -110,7 +110,7 @@ typedef struct TableType TableType;
 typedef struct FunctionType FunctionType;
 typedef struct ContextType ContextType;
 
-typedef int (*RuaCFunction)();
+typedef void (*RuaCFunction)();
 
 struct ValueType {
   ValueTypeEnum Type;
@@ -336,10 +336,6 @@ static void Return() {
   CurrentContext = Frame.PreviousContext;
   Pc = Frame.ReturnAddress;
 }
-
-static void Execute() {
-  switch (Pc) {
-    // Main
 ]]
   )
 end
@@ -348,13 +344,9 @@ function CBackend:PutRuntimeEnd(State)
   CBackend:PutFormatted(
     State,
     [[
-  default:
-    Crash("0x%%x: Execute: Program counter out of bounds", Pc);
-    break;
-  }
-}
-
 int main(int Argc, char *Argv[]) {
+  LuaRuntimeInitialize();
+
 #ifdef RUA_USER_INITIALIZE
   RuaUserInitialize();
 #endif
@@ -384,14 +376,17 @@ function CBackend:PutApiCode(State)
   CBackend:PutFormatted(
     State,
     [[
-void RuaPushNil() { PushValue(CreateNil()); }
+void RuaPushNil(void) {
+  ValueType Result = CreateNil();
+  Push(&Result);
+}
 
 void RuaPushBoolean(bool Value) {
   ValueType Result = {0};
   Result.Type = RuaBoolean;
   Result.Value.Boolean = Value;
 
-  PushValue(Result);
+  Push(&Result);
 }
 
 void RuaPushNumber(double Value) {
@@ -399,7 +394,7 @@ void RuaPushNumber(double Value) {
   Result.Type = RuaNumber;
   Result.Value.Number = Value;
 
-  PushValue(Result);
+  Push(&Result);
 }
 
 void RuaPushString(const char *Value) {
@@ -407,7 +402,7 @@ void RuaPushString(const char *Value) {
   Result.Type = RuaString;
   Result.Value.String = Value;
 
-  PushValue(Result);
+  Push(&Result);
 }
 
 void RuaPop() {
@@ -448,7 +443,10 @@ bool RuaPopBoolean() {
   return Value.Value.Boolean;
 }
 
-void RuaGetGlobal(const char *Name) { RuaPushValue(GetGlobal(Name)); }
+void RuaGetGlobal(const char *Name) { 
+  ValueType Result = GetGlobal(Name);
+  Push(&Result);
+}
 
 void RuaSetGlobal(const char *Name) {
   if (StackSize <= 0) {
@@ -463,18 +461,18 @@ void RuaCreateTable() {
   Result.Type = RuaTable;
   Result.Value.Table = NewTable(0);
 
-  PushValue(Result);
+  Push(&Result);
 }
 
-ValueType RuaCreateCFunction(RuaCFunction Function) {
+void RuaPushCFunction(RuaCFunction Function) {
   if (!Function) {
-    Crash("RuaCreateCFunction: Attempt to create a NULL function");
+    Crash("RuaPushCFunction: Attempt to create a NULL function");
   }
 
   FunctionType *Result = calloc(1, sizeof(FunctionType));
 
   if (!Result) {
-    Crash("RuaCreateCFunction: Failed to allocate function");
+    Crash("RuaPushCFunction: Failed to allocate function");
   }
 
   Result->CFunction = Function;
@@ -484,9 +482,26 @@ ValueType RuaCreateCFunction(RuaCFunction Function) {
   Value.Type = RuaFunction;
   Value.Value.Function = Result;
 
-  return Value;
+  Push(&Value);
 }
   ]]
+  )
+end
+
+function CBackend:PutLuaRuntime(State)
+  CBackend:PutFormatted(
+    State,
+    [[
+static void Print() {
+  const char *String = RuaPopString();
+  printf("%%s\n", String);
+}
+
+static void LuaRuntimeInitialize() {
+  RuaPushCFunction(Print);
+  RuaSetGlobal("print");
+}
+]]
   )
 end
 
@@ -797,6 +812,17 @@ function CBackend:Compile(State, FileName, OutputFile, Data)
   State.Pc = 1
 
   CBackend:PutRuntimeStart(State)
+  CBackend:PutApiCode(State)
+  CBackend:PutLuaRuntime(State)
+
+  CBackend:PutFormatted(
+    State,
+    [[
+static void Execute() {
+  switch (Pc) {
+    // Main
+  ]]
+  )
 
   CBackend:GenerateBlock(State, State.Ir)
 
@@ -813,6 +839,17 @@ function CBackend:Compile(State, FileName, OutputFile, Data)
 
     CBackend:GenerateBlock(State, Function)
   end
+
+  CBackend:PutFormatted(
+    State,
+    [[
+  default:
+    Crash("0x%%x: Execute: Program counter out of bounds", Pc);
+    break;
+  }
+}
+    ]]
+  )
 
   CBackend:PutRuntimeEnd(State)
 
