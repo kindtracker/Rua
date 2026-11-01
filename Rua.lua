@@ -1815,7 +1815,7 @@ end
 
 function IrGenerator:Reset(State)
   IrGenerator.Contexts = {}
-  IrGenerator.Functions = {}
+  State.IrFunctions = {}
   IrGenerator.EndLabels = {}
   IrGenerator.AstLabels = {}
   IrGenerator.LabelId = 1
@@ -1903,7 +1903,7 @@ function IrGenerator:PopContext(State, ExtraCode)
 
   if Parent then
     Context.Parent = Parent
-    table.insert(IrGenerator.Functions, Context)
+    table.insert(State.IrFunctions, Context)
   else
     for _, Ir in ipairs(Context.IrProgram) do
       table.insert(State.Ir, Ir)
@@ -2544,7 +2544,7 @@ function IrGenerator:GenerateLuaIr(State)
 
   GenerateBlock(State.Ir)
 
-  for _, Function in ipairs(IrGenerator.Functions) do
+  for _, Function in ipairs(State.IrFunctions) do
     State.LuaIr = State.LuaIr .. string.format("\n::Label%d::\n", Function.Label)
     GenerateBlock(Function.IrProgram)
   end
