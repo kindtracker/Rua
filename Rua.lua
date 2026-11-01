@@ -1,5 +1,5 @@
 --[[
-  Rua, single-file Lua implementation built in Lua.
+  Rua, A Lua compiler written entirely in Lua.
   Copyright (C) 2026 Kindtracker
 
   This program is free software: you can redistribute it and/or modify
