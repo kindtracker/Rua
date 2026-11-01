@@ -448,6 +448,18 @@ function CBackend:GenerateNewContext(State, Ir)
   )
 end
 
+function CBackend:GeneratePopContext(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    free(CurrentContext);
+    CallFrameType Frame = CallStack[--CallStackSize];
+    CurrentContext = Frame.PreviousContext;
+    Return();
+]]
+  )
+end
+
 function CBackend:GenerateCopy(State, Ir)
   CBackend:PutFormatted(
     State,
@@ -599,22 +611,18 @@ function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     NewContext = CBackend.GenerateNewContext,
     NewTable = CBackend.GenerateNewTable,
+    PopContext = CBackend.GeneratePopContext,
     Copy = CBackend.GenerateCopy,
-
     LoadString = CBackend.GenerateLoadString,
     LoadNumber = CBackend.GenerateLoadNumber,
     LoadBoolean = CBackend.GenerateLoadBoolean,
     LoadNil = CBackend.GenerateLoadNil,
-
     GetGlobal = CBackend.GenerateGetGlobal,
     SetGlobal = CBackend.GenerateSetGlobal,
-
     Push = CBackend.GeneratePush,
     Pop = CBackend.GeneratePop,
     ClearStack = CBackend.GenerateClearStack,
-
     TablePush = CBackend.GenerateTablePush,
-
     CallFunction = CBackend.GenerateCallFunction,
     Return = CBackend.GenerateReturn,
   }
