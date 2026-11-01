@@ -18,7 +18,7 @@ local CBackend = {}
   Generate CallFunction: Implemented
   Generate Return: Implemented
   Generate TablePush: Implemented
-  Generate NewFunction: Not Implemented
+  Generate NewFunction: Implemented
   Generate Index: Not Implemented
   Generate NewIndex: Not Implemented
 
@@ -1016,10 +1016,30 @@ function CBackend:GenerateGreaterThanOrEqual(State, Ir)
   GenerateComparison(State, Ir, "GreaterThanOrEqual", ">=")
 end
 
+function CBackend:GenerateNewFunction(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *ResultRegister = GetRegister(%d);
+    FunctionType *Function = malloc(sizeof(FunctionType));
+    if (!Function) {
+      Crash("0x%%x: CreateContext: Failed to allocate function", Pc);
+    }
+
+    Function->Address = %d;
+    Function->IsCFunction = false;
+    ResultRegister->Value.Function = Function;
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     NewContext = CBackend.GenerateNewContext,
     NewTable = CBackend.GenerateNewTable,
+    NewFunction = CBackend.GenerateNewFunction,
     PopContext = CBackend.GeneratePopContext,
     Copy = CBackend.GenerateCopy,
     LoadString = CBackend.GenerateLoadString,
