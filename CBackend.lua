@@ -3,20 +3,21 @@ local CBackend = {}
 --[[
   CBackend:
 
-  Generate NewContext: Not Implemented
-  Generate NewTable: Partially Implemented
-  Generate Copy: Not Implemented
+  Generate NewContext: Implemented
+  Generate NewTable: Implemented
+  Generate Copy: Implemented
   Generate LoadString: Implemented
   Generate LoadNumber: Implemented
   Generate LoadBoolean: Implemented
   Generate LoadNil: Implemented
   Generate GetGlobal: Implemented
-  Generate SetGlobal: Not Implemented
+  Generate SetGlobal: Implemented
   Generate Push: Implemented
   Generate Pop: Implemented
   Generate ClearStack: Implemented
-  Generate CallFunction: Implemented
-  Generate Return: Implemented
+  Generate CallFunction: Basic implementation
+  Generate Return: Basic implementation
+  Generate TablePush: Implemented
   Generate Add: Not Implemented
   Generate Subtract: Not Implemented
   Generate Multiply: Not Implemented
@@ -35,102 +36,309 @@ local CBackend = {}
   Generate GreaterThanOrEqual: Not Implemented
   Generate Index: Not Implemented
   Generate NewIndex: Not Implemented
-  Generate TablePush: Not Implemented
-  Generate Label: Not Implemented
-  Generate Goto: Not Implemented
-  Generate Break: Not Implemented
-  Generate Function: Not Implemented
-  Generate If: Not Implemented
-  Generate While: Not Implemented
+  Generate AstLabel: Not Implemented
+  Generate AstGoto: Not Implemented
+  Generate CreateFunction: Not Implemented
 ]]
 
 function CBackend:PutFormatted(State, ...)
   State.CCode = State.CCode .. string.format(...)
 end
 
+local function EscapeCString(Value)
+  local Parts = { '"' }
+
+  for Idx = 1, #Value do
+    local Byte = string.byte(Value, Idx)
+
+    if Byte == 34 then
+      Parts[#Parts + 1] = '\\"'
+    elseif Byte == 92 then
+      Parts[#Parts + 1] = "\\\\"
+    elseif Byte == 10 then
+      Parts[#Parts + 1] = "\\n"
+    elseif Byte == 13 then
+      Parts[#Parts + 1] = "\\r"
+    elseif Byte == 9 then
+      Parts[#Parts + 1] = "\\t"
+    elseif Byte < 32 or Byte >= 127 then
+      Parts[#Parts + 1] = string.format("\\%03o", Byte)
+    else
+      Parts[#Parts + 1] = string.char(Byte)
+    end
+  end
+
+  Parts[#Parts + 1] = '"'
+
+  return table.concat(Parts)
+end
+
 function CBackend:PutRuntimeStart(State)
   CBackend:PutFormatted(
     State,
     [[
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 
 #define REGISTER_CAPACITY 256
 #define STACK_CAPACITY 256
 #define CALLSTACK_CAPACITY 256
+#define GLOBAL_CAPACITY 256
 
 typedef enum {
-  TypeNil,
-  TypeBoolean,
-  TypeNumber,
-  TypeString,
-  TypeFunction,
-  TypeTable
+  RuaNil,
+  RuaBoolean,
+  RuaNumber,
+  RuaString,
+  RuaFunction,
+  RuaTable
 } ValueTypeEnum;
 
-typedef struct {
-  ValueTypeEnum Type;
-  void *Value;
-} ValueType;
+typedef struct ValueType ValueType;
+typedef struct TableType TableType;
+typedef struct FunctionType FunctionType;
+typedef struct ContextType ContextType;
 
-typedef struct {
+struct ValueType {
+  ValueTypeEnum Type;
+
+  union {
+    bool Boolean;
+    double Number;
+    const char *String;
+    FunctionType *Function;
+    TableType *Table;
+  } Value;
+};
+
+struct TableType {
   ValueType *Items;
   size_t Count;
   size_t Capacity;
-} TableType;
+};
 
-typedef struct {
+struct FunctionType {
   uint32_t Address;
-} FunctionType;
+};
+
+struct ContextType {
+  ValueType Registers[REGISTER_CAPACITY];
+};
 
 typedef struct {
   const char *Name;
-  ValueType *Value;
-} VariableType;
+  ValueType Value;
+} GlobalType;
 
-uint32_t Pc = 0;
+typedef struct {
+  ContextType *PreviousContext;
+  uint32_t ReturnAddress;
+} CallFrameType;
+
+uint32_t Pc = 1;
 bool Running = true;
 
-Value *Registers[REGISTER_CAPACITY];
-Value *Stack[STACK_CAPACITY];
-int StackSize;
-Value *CallStack[STACK_CAPACITY];
-int CallStack;
+ContextType *CurrentContext = NULL;
 
-void Push(ValueType *Register) {
-  if (StackSize > STACK_CAPACITY) {
+ValueType Stack[STACK_CAPACITY];
+int StackSize = 0;
+
+CallFrameType CallStack[CALLSTACK_CAPACITY];
+int CallStackSize = 0;
+
+GlobalType Globals[GLOBAL_CAPACITY];
+size_t GlobalCount = 0;
+
+ContextType *CreateContext(void) {
+  ContextType *Context = calloc(1, sizeof(ContextType));
+
+  if (!Context) {
     Running = false;
+    return NULL;
   }
-  Stack[StackSize++] = Register;
+
+  return Context;
 }
 
-Value *Pop() {
-  if (StackSize < 0) {
-    Running = false;
+void NewContext(void) {
+  ContextType *Context = CreateContext();
+
+  if (!Context) {
+    return;
   }
-  return Stack[StackSize--];
+
+  if (CurrentContext) {
+    free(CurrentContext);
+  }
+
+  CurrentContext = Context;
+}
+
+ValueType *GetRegister(int Register) {
+  if (!CurrentContext ||
+      Register < 0 ||
+      Register >= REGISTER_CAPACITY) {
+    Running = false;
+    return NULL;
+  }
+
+  return &CurrentContext->Registers[Register];
+}
+
+ValueType CreateNil(void) {
+  ValueType Result = {0};
+  Result.Type = RuaNil;
+  return Result;
 }
 
 void PutNil(ValueType *Register) {
-  Register->Type = Nil;
+  if (Register) {
+    *Register = CreateNil();
+  }
+}
+
+void Push(ValueType *Register) {
+  if (!Register || StackSize >= STACK_CAPACITY) {
+    Running = false;
+    return;
+  }
+
+  Stack[StackSize++] = *Register;
+}
+
+ValueType Pop(void) {
+  if (StackSize <= 0) {
+    Running = false;
+    return CreateNil();
+  }
+
+  return Stack[--StackSize];
+}
+
+void ClearStack(void) {
+  memset(Stack, 0, sizeof(Stack));
+  StackSize = 0;
+}
+
+TableType *NewTable(size_t Capacity) {
+  TableType *Table = calloc(1, sizeof(TableType));
+
+  if (!Table) {
+    Running = false;
+    return NULL;
+  }
+
+  Table->Capacity = Capacity;
+
+  if (Capacity > 0) {
+    Table->Items = calloc(Capacity, sizeof(ValueType));
+
+    if (!Table->Items) {
+      free(Table);
+      Running = false;
+      return NULL;
+    }
+  }
+
+  return Table;
+}
+
+void TablePush(TableType *Table, ValueType Value) {
+  if (!Table) {
+    Running = false;
+    return;
+  }
+
+  if (Table->Count >= Table->Capacity) {
+    size_t NewCapacity = Table->Capacity == 0
+      ? 4
+      : Table->Capacity * 2;
+
+    ValueType *NewItems = realloc(
+      Table->Items,
+      NewCapacity * sizeof(ValueType)
+    );
+
+    if (!NewItems) {
+      Running = false;
+      return;
+    }
+
+    Table->Items = NewItems;
+    Table->Capacity = NewCapacity;
+  }
+
+  Table->Items[Table->Count++] = Value;
+}
+
+void SetGlobal(const char *Name, ValueType Value) {
+  for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
+    if (strcmp(Globals[Idx].Name, Name) == 0) {
+      Globals[Idx].Value = Value;
+      return;
+    }
+  }
+
+  if (GlobalCount >= GLOBAL_CAPACITY) {
+    Running = false;
+    return;
+  }
+
+  Globals[GlobalCount].Name = Name;
+  Globals[GlobalCount].Value = Value;
+  GlobalCount++;
+}
+
+ValueType GetGlobal(const char *Name) {
+  for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
+    if (strcmp(Globals[Idx].Name, Name) == 0) {
+      return Globals[Idx].Value;
+    }
+  }
+
+  return CreateNil();
 }
 
 void Jump(uint32_t TargetPc) {
-  if (CallStackSize > CALLSTACK_CAPACITY) {
+  if (CallStackSize >= CALLSTACK_CAPACITY) {
     Running = false;
+    return;
   }
-  CallStack[CallStackSize++] = Pc;
-  Pc = TargetPc;
+
+  ContextType *Context = CreateContext();
+
+  if (!Context) {
+    return;
+  }
+
+  CallFrameType *Frame = &CallStack[CallStackSize++];
+
+  Frame->PreviousContext = CurrentContext;
+  Frame->ReturnAddress = Pc;
+
+  CurrentContext = Context;
+  Pc = TargetPc - 1;
 }
 
-void Return() {
-  if (CallStackSize < 0) {
+void Return(void) {
+  if (CallStackSize <= 0) {
     Running = false;
+    return;
   }
-  Pc = CallStack[CallStackSize--];
+
+  CallFrameType Frame = CallStack[--CallStackSize];
+
+  free(CurrentContext);
+
+  CurrentContext = Frame.PreviousContext;
+  Pc = Frame.ReturnAddress;
 }
 
-void Execute() {
+void Execute(void) {
   switch (Pc) {
     // Main
 ]]
@@ -141,21 +349,29 @@ function CBackend:PutRuntimeEnd(State)
   CBackend:PutFormatted(
     State,
     [[
-
-    default:
-      Running = false;
+  default:
+    Running = false;
+    break;
   }
 }
 
-int main() {
-  memset(&Registers, 0, sizeof(Registers));
-  memset(&Stack, 0, sizeof(Stack));
-  memset(&CallStack, 0, sizeof(CallStack));
-
+int main(void) {
   while (Running) {
     Execute();
-    Pc++;
+
+    if (Running) {
+      Pc++;
+    }
   }
+
+  while (CallStackSize > 0) {
+    free(CurrentContext);
+
+    CallFrameType Frame = CallStack[--CallStackSize];
+    CurrentContext = Frame.PreviousContext;
+  }
+
+  return 0;
 }
 ]]
   )
@@ -165,69 +381,15 @@ function CBackend:GenerateLoadString(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      ValueType *Register = GetRegister(%d);
-      Register->Type = TypeString;
-      Register->Value = %q;
+    ValueType *Register = GetRegister(%d);
+
+    if (Register) {
+      Register->Type = RuaString;
+      Register->Value.String = %s;
+    }
 ]],
     Ir[3],
-    Ir[2]
-  )
-end
-
-function CBackend:GeneratePush(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-      ValueType *Register = GetRegister(%d);
-      Push(*Register);
-]],
-    Ir[2]
-  )
-end
-
-function CBackend:GeneratePop(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-      ValueType *Register = GetRegister(%d);
-      ValueType Value = Pop();
-      memcpy(Register, &Value, sizeof(ValueType));
-]],
-    Ir[2]
-  )
-end
-
-function CBackend:GenerateClearStack(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-      memset(&Stack, 0, sizeof(Stack));
-]],
-    Ir[2]
-  )
-end
-
-function CBackend:GenerateGetGlobal(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-      ValueType *ResultRegister = GetRegister(%d)
-      ValueType *NameRegister = GetRegister(%d)
-      const char *Name = NameRegister->Value;
-
-      for (int Idx = 0; Idx < sizeof(Variables) / sizeof(Value); Idx++) {
-        VariableType *Variable = Variables[Idx];
-
-        if (strcmp(Variable->Name, Name) == 0) {
-          memcpy(ResultRegister, &Value, sizeof(ValueType));
-          break;
-        }
-      }
-
-      PutNil(ResultRegister);
-]],
-    Ir[2],
-    Ir[3]
+    EscapeCString(Ir[2])
   )
 end
 
@@ -235,9 +397,12 @@ function CBackend:GenerateLoadNumber(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      ValueType *ResultRegister = GetRegister(%d)
-      ResultRegister->Type = TypeNumber;
-      ResultRegister->Value = %d;
+    ValueType *Register = GetRegister(%d);
+
+    if (Register) {
+      Register->Type = RuaNumber;
+      Register->Value.Number = %g;
+    }
 ]],
     Ir[3],
     Ir[2]
@@ -248,12 +413,15 @@ function CBackend:GenerateLoadBoolean(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      ValueType *ResultRegister = GetRegister(%d)
-      ResultRegister->Type = TypeBoolean;
-      ResultRegister->Value = %s;
+    ValueType *Register = GetRegister(%d);
+
+    if (Register) {
+      Register->Type = RuaBoolean;
+      Register->Value.Boolean = %s;
+    }
 ]],
     Ir[3],
-    Ir[2] == true and "true" or "false"
+    Ir[2] and "true" or "false"
   )
 end
 
@@ -261,11 +429,38 @@ function CBackend:GenerateLoadNil(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      ValueType *ResultRegister = GetRegister(%d)
-      ResultRegister->Type = TypeNil;
+    ValueType *Register = GetRegister(%d);
+
+    if (Register) {
+      PutNil(Register);
+    }
 ]],
-    Ir[3],
-    Ir[2] == true and "true" or "false"
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateNewContext(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    NewContext();
+]]
+  )
+end
+
+function CBackend:GenerateCopy(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *Source = GetRegister(%d);
+    ValueType *Destination = GetRegister(%d);
+
+    if (Source && Destination) {
+      *Destination = *Source;
+    }
+]],
+    Ir[2],
+    Ir[3]
   )
 end
 
@@ -273,30 +468,104 @@ function CBackend:GenerateNewTable(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      TableType *Table = malloc(sizeof(TableType));
-      if (!Table) {
-        Running = false;
-        return NULL;
-      }
+    ValueType *Result = GetRegister(%d);
 
-      Table->Count = 0;
-      Table->Capacity = Capacity;
-      Table->Items = calloc(Capacity, sizeof(ValueType));
-      if (Capacity > 0 && !Table->Items) {
-        free(Table);
-        Running = false;
-        return NULL;
-      }
-
-      memset(Table, 0, sizeof(TableType));
-      memset(Table->Items, 0, sizeof(ValueType) * Capacity);
-
-      ValueType *ResultRegister = GetRegister(%d);
-      ResultRegister->Type = TypeTable;
-      ResultRegister->Value = Table;
+    if (Result) {
+      Result->Type = RuaTable;
+      Result->Value.Table = NewTable(%d);
+    }
 ]],
     Ir[3],
-    Ir[2] == true and "true" or "false"
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateTablePush(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *TableRegister = GetRegister(%d);
+    ValueType *ValueRegister = GetRegister(%d);
+
+    if (TableRegister &&
+        ValueRegister &&
+        TableRegister->Type == RuaTable) {
+      TablePush(TableRegister->Value.Table, *ValueRegister);
+    } else {
+      Running = false;
+    }
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
+function CBackend:GeneratePush(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *Register = GetRegister(%d);
+
+    if (Register) {
+      Push(Register);
+    }
+]],
+    Ir[2]
+  )
+end
+
+function CBackend:GeneratePop(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *Register = GetRegister(%d);
+
+    if (Register) {
+      *Register = Pop();
+    }
+]],
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateClearStack(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ClearStack();
+]]
+  )
+end
+
+function CBackend:GenerateGetGlobal(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *Result = GetRegister(%d);
+    ValueType *Name = GetRegister(%d);
+
+    if (Result && Name && Name->Type == RuaString) {
+      *Result = GetGlobal(Name->Value.String);
+    }
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
+function CBackend:GenerateSetGlobal(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *Name = GetRegister(%d);
+    ValueType *Value = GetRegister(%d);
+
+    if (Name && Value && Name->Type == RuaString) {
+      SetGlobal(Name->Value.String, *Value);
+    }
+]],
+    Ir[2],
+    Ir[3]
   )
 end
 
@@ -304,49 +573,69 @@ function CBackend:GenerateCallFunction(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      ValueType *ResultRegister = GetRegister(%d);
-      FunctionType *Function = (FunctionType)ResultRegister->Value;
-      Jump(Function->Address);
-  ]],
+    ValueType *Register = GetRegister(%d);
+
+    if (Register && Register->Type == RuaFunction &&
+        Register->Value.Function) {
+      Jump(Register->Value.Function->Address);
+    } else {
+      Running = false;
+    }
+]],
     Ir[2]
   )
 end
 
-function CBackend:GenerateReturnCode(State, Ir)
+function CBackend:GenerateReturn(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-      Return();
-  ]]
+    Return();
+]]
   )
 end
 
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
+    NewContext = CBackend.GenerateNewContext,
+    NewTable = CBackend.GenerateNewTable,
+    Copy = CBackend.GenerateCopy,
+
     LoadString = CBackend.GenerateLoadString,
-    Push = CBackend.GeneratePush,
-    Pop = CBackend.GeneratePop,
-    ClearStack = CBackend.GenerateClearStack,
-    GetGlobal = CBackend.GenerateGetGlobal,
     LoadNumber = CBackend.GenerateLoadNumber,
     LoadBoolean = CBackend.GenerateLoadBoolean,
     LoadNil = CBackend.GenerateLoadNil,
-    NewTable = CBackend.GenerateNewTable,
+
+    GetGlobal = CBackend.GenerateGetGlobal,
+    SetGlobal = CBackend.GenerateSetGlobal,
+
+    Push = CBackend.GeneratePush,
+    Pop = CBackend.GeneratePop,
+    ClearStack = CBackend.GenerateClearStack,
+
+    TablePush = CBackend.GenerateTablePush,
+
     CallFunction = CBackend.GenerateCallFunction,
     Return = CBackend.GenerateReturn,
   }
 
-  local IrInstruction = Ir[1]
-  if GenerateIrTable[IrInstruction] then
-    GenerateIrTable[IrInstruction](CBackend, State, Ir)
-    CBackend:PutFormatted(State, [[
-      break
-]] .. "\n")
+  local GenerateIr = GenerateIrTable[Ir[1]]
+
+  if GenerateIr then
+    GenerateIr(CBackend, State, Ir)
+
+    CBackend:PutFormatted(
+      State,
+      [[
+    break;
+]]
+    )
   else
     CBackend:PutFormatted(
       State,
       [[
-      // Couldn't find a handler for %q
+    // Couldn't find a handler for %q
+    break;
 ]],
       Ir[1]
     )
@@ -358,11 +647,19 @@ function CBackend:GenerateBlock(State, IrProgram)
     CBackend:PutFormatted(
       State,
       [[
-    case %d:
+  case %d: {
 ]],
       State.Pc
     )
+
     CBackend:Generate(State, Ir)
+
+    CBackend:PutFormatted(
+      State,
+      [[
+  }
+]]
+    )
 
     State.Pc = State.Pc + 1
   end
@@ -375,11 +672,18 @@ function CBackend:Compile(State, FileName, OutputFile, Data)
   CBackend:PutRuntimeStart(State)
 
   CBackend:GenerateBlock(State, State.Ir)
+
   for _, Function in ipairs(State.IrFunctions) do
     CBackend:PutFormatted(State, "\n")
-    CBackend:PutFormatted(State, [[
-      // Label%d
-]] .. "\n", Function.Label)
+
+    CBackend:PutFormatted(
+      State,
+      [[
+  // Label %d
+]],
+      Function.Label
+    )
+
     CBackend:GenerateBlock(State, Function)
   end
 
