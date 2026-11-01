@@ -16,7 +16,7 @@ local CBackend = {}
   Generate Pop: Implemented
   Generate ClearStack: Implemented
   Generate CallFunction: Implemented
-  Generate Return: Not Implemented
+  Generate Return: Implemented
   Generate Add: Not Implemented
   Generate Subtract: Not Implemented
   Generate Multiply: Not Implemented
@@ -80,7 +80,7 @@ typedef struct {
 } TableType;
 
 typedef struct {
-  int Label;
+  uint32_t Address;
 } FunctionType;
 
 typedef struct {
@@ -94,6 +94,8 @@ bool Running = true;
 Value *Registers[REGISTER_CAPACITY];
 Value *Stack[STACK_CAPACITY];
 int StackSize;
+Value *CallStack[STACK_CAPACITY];
+int CallStack;
 
 void Push(ValueType *Register) {
   if (StackSize > STACK_CAPACITY) {
@@ -113,8 +115,19 @@ void PutNil(ValueType *Register) {
   Register->Type = Nil;
 }
 
-void PutJump(ValueType *Register) {
-  Register->Type = Nil;
+void Jump(uint32_t TargetPc) {
+  if (CallStackSize > CALLSTACK_CAPACITY) {
+    Running = false;
+  }
+  CallStack[CallStackSize++] = Pc;
+  Pc = TargetPc;
+}
+
+void Return() {
+  if (CallStackSize < 0) {
+    Running = false;
+  }
+  Pc = CallStack[CallStackSize--];
 }
 
 void Execute() {
@@ -137,6 +150,7 @@ function CBackend:PutRuntimeEnd(State)
 int main() {
   memset(&Registers, 0, sizeof(Registers));
   memset(&Stack, 0, sizeof(Stack));
+  memset(&CallStack, 0, sizeof(CallStack));
 
   while (Running) {
     Execute();
@@ -292,9 +306,18 @@ function CBackend:GenerateCallFunction(State, Ir)
     [[
       ValueType *ResultRegister = GetRegister(%d);
       FunctionType *Function = (FunctionType)ResultRegister->Value;
-      Pc = Function->Address;
+      Jump(Function->Address);
   ]],
     Ir[2]
+  )
+end
+
+function CBackend:GenerateReturnCode(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+      Return();
+  ]]
   )
 end
 
@@ -310,6 +333,7 @@ function CBackend:Generate(State, Ir)
     LoadNil = CBackend.GenerateLoadNil,
     NewTable = CBackend.GenerateNewTable,
     CallFunction = CBackend.GenerateCallFunction,
+    Return = CBackend.GenerateReturn,
   }
 
   local IrInstruction = Ir[1]
