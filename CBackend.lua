@@ -110,6 +110,8 @@ typedef struct TableType TableType;
 typedef struct FunctionType FunctionType;
 typedef struct ContextType ContextType;
 
+typedef int (*RuaCFunction)();
+
 struct ValueType {
   ValueTypeEnum Type;
 
@@ -130,6 +132,8 @@ struct TableType {
 
 struct FunctionType {
   uint32_t Address;
+  RuaCFunction CFunction;
+  bool IsCFunction;
 };
 
 struct ContextType {
@@ -160,7 +164,7 @@ int CallStackSize = 0;
 GlobalType Globals[GLOBAL_CAPACITY];
 size_t GlobalCount = 0;
 
-static ContextType *CreateContext(void) {
+static ContextType *CreateContext() {
   ContextType *Context = calloc(1, sizeof(ContextType));
 
   if (!Context) {
@@ -170,7 +174,7 @@ static ContextType *CreateContext(void) {
   return Context;
 }
 
-static void NewContext(void) {
+static void NewContext() {
   ContextType *Context = CreateContext();
 
   if (!Context) {
@@ -194,7 +198,7 @@ static ValueType *GetRegister(int Register) {
   return &CurrentContext->Registers[Register];
 }
 
-static ValueType CreateNil(void) {
+static ValueType CreateNil() {
   ValueType Result = {0};
   Result.Type = RuaNil;
   return Result;
@@ -218,7 +222,7 @@ static void Push(ValueType *Register) {
   Stack[StackSize++] = *Register;
 }
 
-static ValueType Pop(void) {
+static ValueType Pop() {
   if (StackSize <= 0) {
     Crash("0x%%x: Pop: Attempt to pop from an empty stack", Pc);
   }
@@ -226,7 +230,7 @@ static ValueType Pop(void) {
   return Stack[--StackSize];
 }
 
-static void ClearStack(void) {
+static void ClearStack() {
   memset(Stack, 0, sizeof(Stack));
   StackSize = 0;
 }
@@ -320,7 +324,7 @@ static void Jump(uint32_t TargetPc) {
   Pc = TargetPc - 1;
 }
 
-static void Return(void) {
+static void Return() {
   if (CallStackSize <= 0) {
     Crash("0x%%x: Return: Attempt to return without an active function call", Pc);
   }
@@ -333,7 +337,7 @@ static void Return(void) {
   Pc = Frame.ReturnAddress;
 }
 
-static void Execute(void) {
+static void Execute() {
   switch (Pc) {
     // Main
 ]]
@@ -350,7 +354,11 @@ function CBackend:PutRuntimeEnd(State)
   }
 }
 
-int main(void) {
+int main(int Argc, char *Argv[]) {
+#ifdef RUA_USER_INITIALIZE
+  RuaUserInitialize();
+#endif
+
   while (Running) {
     Execute();
 
@@ -369,6 +377,116 @@ int main(void) {
   return 0;
 }
 ]]
+  )
+end
+
+function CBackend:PutApiCode(State)
+  CBackend:PutFormatted(
+    State,
+    [[
+void RuaPushNil() { PushValue(CreateNil()); }
+
+void RuaPushBoolean(bool Value) {
+  ValueType Result = {0};
+  Result.Type = RuaBoolean;
+  Result.Value.Boolean = Value;
+
+  PushValue(Result);
+}
+
+void RuaPushNumber(double Value) {
+  ValueType Result = {0};
+  Result.Type = RuaNumber;
+  Result.Value.Number = Value;
+
+  PushValue(Result);
+}
+
+void RuaPushString(const char *Value) {
+  ValueType Result = {0};
+  Result.Type = RuaString;
+  Result.Value.String = Value;
+
+  PushValue(Result);
+}
+
+void RuaPop() {
+  if (StackSize <= 0) {
+    Crash("RuaPop: Attempt to pop from an empty stack");
+  }
+
+  StackSize--;
+}
+
+double RuaPopNumber() {
+  ValueType Value = Pop();
+
+  if (Value.Type != RuaNumber) {
+    Crash("RuaPopNumber: Expected a number");
+  }
+
+  return Value.Value.Number;
+}
+
+const char *RuaPopString() {
+  ValueType Value = Pop();
+
+  if (Value.Type != RuaString) {
+    Crash("RuaPopString: Expected a string");
+  }
+
+  return Value.Value.String;
+}
+
+bool RuaPopBoolean() {
+  ValueType Value = Pop();
+
+  if (Value.Type != RuaBoolean) {
+    Crash("RuaPopBoolean: Expected a boolean");
+  }
+
+  return Value.Value.Boolean;
+}
+
+void RuaGetGlobal(const char *Name) { RuaPushValue(GetGlobal(Name)); }
+
+void RuaSetGlobal(const char *Name) {
+  if (StackSize <= 0) {
+    Crash("RuaSetGlobal: Attempt to set global with an empty stack");
+  }
+
+  SetGlobal(Name, Pop());
+}
+
+void RuaCreateTable() {
+  ValueType Result = {0};
+  Result.Type = RuaTable;
+  Result.Value.Table = NewTable(0);
+
+  PushValue(Result);
+}
+
+ValueType RuaCreateCFunction(RuaCFunction Function) {
+  if (!Function) {
+    Crash("RuaCreateCFunction: Attempt to create a NULL function");
+  }
+
+  FunctionType *Result = calloc(1, sizeof(FunctionType));
+
+  if (!Result) {
+    Crash("RuaCreateCFunction: Failed to allocate function");
+  }
+
+  Result->CFunction = Function;
+  Result->IsCFunction = true;
+
+  ValueType Value = {0};
+  Value.Type = RuaFunction;
+  Value.Value.Function = Result;
+
+  return Value;
+}
+  ]]
   )
 end
 
@@ -583,9 +701,13 @@ function CBackend:GenerateCallFunction(State, Ir)
     [[
     ValueType *Register = GetRegister(%d);
 
-    if (Register && Register->Type == RuaFunction &&
-        Register->Value.Function) {
-      Jump(Register->Value.Function->Address);
+    if (Register && Register->Type == RuaFunction) {
+      FunctionType *Function = Register->Value.Function;
+      if (Function->IsCFunction) {
+        Function->CFunction();
+      } else {
+        Jump(Function->Address);
+      }
     } else {
       Crash("0x%%x: CallFunction: Attempt to call a value a non-function value (Register %%d)", Pc, %d);
     }
