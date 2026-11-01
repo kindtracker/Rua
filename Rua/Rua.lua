@@ -2532,7 +2532,7 @@ function IrGenerator:ResolveLabels(State, IrProgram)
       if not LabelAddress then
         Logger:Error(State, "InternalError", "Couldn't resolve label %s", tostring(Ir[#Ir]))
       else
-        Ir[#Ir] = LabelAddress
+        Ir[#Ir] = LabelAddress - 1
       end
     end
   end

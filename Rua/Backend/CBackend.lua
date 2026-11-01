@@ -21,6 +21,8 @@ local CBackend = {}
   Generate NewFunction: Implemented
   Generate Index: Not Implemented
   Generate NewIndex: Not Implemented
+  Generate Jump: Implemented
+  Generate JumpIfTrue: Implemented
 
   Generate Add: Implemented
   Generate Subtract: Implemented
@@ -1021,16 +1023,48 @@ function CBackend:GenerateNewFunction(State, Ir)
     State,
     [[
     ValueType *ResultRegister = GetRegister(%d);
-    FunctionType *Function = malloc(sizeof(FunctionType));
+    RuaFunction *Function = malloc(sizeof(FunctionType));
     if (!Function) {
       Crash("0x%%x: CreateContext: Failed to allocate function", Pc);
     }
 
     Function->Address = %d;
     Function->IsCFunction = false;
+    ResultRegister->Type = RuaFunction;
     ResultRegister->Value.Function = Function;
 ]],
     Ir[2],
+    Ir[3]
+  )
+end
+
+function CBackend:GenerateJump(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    Jump(%d);
+]],
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateJumpIfTrue(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *ValueRegister = GetRegister(%d);
+
+    if (ValueRegister->Type == RuaBoolean) {
+      if (ValueRegister->Value.Boolean == true) {
+        Jump(%d);
+      }
+    } else if (ValueRegister->Type == RuaNil) {
+    } else {
+      Jump(%d);
+    }
+]],
+    Ir[2],
+    Ir[3],
     Ir[3]
   )
 end
@@ -1070,6 +1104,8 @@ function CBackend:Generate(State, Ir)
     LessThanOrEqual = CBackend.GenerateLessThanOrEqual,
     GreaterThan = CBackend.GenerateGreaterThan,
     GreaterThanOrEqual = CBackend.GenerateGreaterThanOrEqual,
+    Jump = CBackend.GenerateJump,
+    JumpIfTrue = CBackend.GenerateJumpIfTrue,
   }
 
   local GenerateIr = GenerateIrTable[Ir[1]]
