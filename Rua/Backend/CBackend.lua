@@ -102,12 +102,19 @@ function CBackend:PutRuntimeStart(State)
 #define CALLSTACK_CAPACITY 256
 #define GLOBAL_CAPACITY 256
 
-#define Crash(...)              \
-  do {                           \
-    fflush(stdout);               \
-    fprintf(stderr, __VA_ARGS__); \
-    fputc('\n', stderr);          \
-    exit(1);                      \
+char *FileName = "Meow";
+int Row = 1;
+
+#define Crash(...)                                                             \
+  do {                                                                         \
+    fflush(stdout);                                                            \
+    fprintf(stderr,                                                            \
+            "\x1b[38;2;255;100;100mRua:\x1b[0m %%s:%%d: "                      \
+            "\x1b[31mError:\x1b[0m ",                                          \
+            FileName, Row);                                                    \
+    fprintf(stderr, __VA_ARGS__);                                              \
+    fputc('\n', stderr);                                                       \
+    exit(1);                                                                   \
   } while (0)
 
 typedef enum {

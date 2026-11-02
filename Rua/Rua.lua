@@ -2647,7 +2647,7 @@ function Rua:Compile(State, FileName, OutputFile, Data)
   -- PrintTable(State.Tokens)
 
   Rua:Parse(State)
-  -- PrintTable(State.Ast)
+  --  PrintTable(State.Ast)
 
   Rua:Desugar(State)
   -- PrintTable(State.Ast)
