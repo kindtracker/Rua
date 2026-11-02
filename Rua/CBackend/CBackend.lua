@@ -357,6 +357,7 @@ function CBackend:GenerateCallFunction(State, Ir)
       Function->CFunction();
     } else {
       Jump(Function->Address);
+      break;
     }
 ]],
     Ir[2],
@@ -630,6 +631,7 @@ function CBackend:GenerateJump(State, Ir)
     State,
     [[
     Jump(%d);
+    break;
 ]],
     Ir[2]
   )
@@ -645,6 +647,7 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
         !(ValueRegister->Type == RuaBoolean &&
           !ValueRegister->Value.Boolean)) {
       Jump(%d);
+      break;
     }
 ]],
     Ir[2],
@@ -723,7 +726,6 @@ function CBackend:Generate(State, Ir)
     CBackend:PutFormatted(
       State,
       [[
-    break;
 ]]
     )
   else
@@ -731,15 +733,16 @@ function CBackend:Generate(State, Ir)
       State,
       [[
     // Couldn't find a handler for %q
-    break;
 ]],
       Ir[1]
     )
   end
 end
 
-function CBackend:GenerateBlock(State, IrProgram)
-  for _, Ir in ipairs(IrProgram) do
+function CBackend:GenerateBlock(State, IrProgram, IsLast)
+  for Idx, Ir in ipairs(IrProgram) do
+    local IsLastIr = (Idx == #IrProgram) and IsLast
+
     CBackend:PutFormatted(
       State,
       [[
@@ -747,8 +750,16 @@ function CBackend:GenerateBlock(State, IrProgram)
 ]],
       CBackend.Pc
     )
-
     CBackend:Generate(State, Ir)
+
+    if IsLastIr then
+      CBackend:PutFormatted(
+        State,
+        [[
+    break;
+]]
+      )
+    end
 
     CBackend:PutFormatted(
       State,
@@ -771,8 +782,8 @@ static void RuaExecuteIr() {
 ]]
   )
 
-  CBackend:GenerateBlock(State, State.Ir)
-  for _, Function in ipairs(State.IrFunctions) do
+  CBackend:GenerateBlock(State, State.Ir, #State.IrFunctions == 0)
+  for Idx, Function in ipairs(State.IrFunctions) do
     CBackend:PutFormatted(State, "\n")
     CBackend:PutFormatted(
       State,
@@ -781,7 +792,9 @@ static void RuaExecuteIr() {
 ]],
       Function.Label
     )
-    CBackend:GenerateBlock(State, Function.IrProgram)
+
+    local IsLast = Idx == #State.IrFunctions
+    CBackend:GenerateBlock(State, Function.IrProgram, IsLast)
   end
 
   CBackend:PutFormatted(
