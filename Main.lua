@@ -16,6 +16,9 @@ if FileName == nil then
   return
 end
 
+CBackend:UseRuaRuntime(State, "Rua/CBackend/RuaRuntime.c")
 State:UseBackend(CBackend)
 
-local Result, Error = Rua:Compile(State, FileName, FileName .. ".c")
+local Result, Error = Rua:Compile(State, FileName, FileName .. ".c", {
+  AddMain = true,
+})

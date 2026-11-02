@@ -2653,7 +2653,7 @@ function Rua.new()
   return State
 end
 
-function Rua:Compile(State, FileName, OutputFile, Data)
+function Rua:Compile(State, FileName, OutputFile, Arguments)
   local FilePtr, Error = io.open(FileName, "r")
   if not FilePtr then
     return nil, Error
@@ -2681,7 +2681,7 @@ function Rua:Compile(State, FileName, OutputFile, Data)
     IrFile:close()
   end
 
-  return State.Backend:Compile(State, FileName, OutputFile, Data)
+  return State.Backend:Compile(State, FileName, OutputFile, Arguments)
 end
 
 return Rua
