@@ -1431,6 +1431,7 @@ function Parser:ParseStatement(State)
   Parser.StartIndex = Parser.Index
 
   Statement.Local = false
+  Statement.Row = Parser.Token.Row
 
   if Parser:CheckToken(State, {
     Kind = "Punct",
@@ -2441,7 +2442,19 @@ function IrGenerator:GenerateBreak(State, Ast, Data)
   IrGenerator:NewIr(State)
 end
 
+function IrGenerator:GenerateChangeRow(State, Ast)
+  if Ast.Row then
+    IrGenerator.Ir = {
+      [1] = "Row",
+      [2] = Ast.Row,
+    }
+    IrGenerator:NewIr(State)
+  end
+end
+
 function IrGenerator:Generate(State, Ast, Data)
+  IrGenerator:GenerateChangeRow(State, Ast)
+
   if type(Ast) == "string" or Ast.Kind == "String" then
     local ResultRegister = IrGenerator:GenerateString(State, Ast, Data)
     return ResultRegister
@@ -2544,6 +2557,12 @@ end
 
 function IrGenerator:GenerateIr(State)
   IrGenerator:PushContext(State)
+
+  IrGenerator.Ir = {
+    [1] = "File",
+    [2] = State.File.Name,
+  }
+  IrGenerator:NewIr(State)
 
   for _, Ast in ipairs(State.Ast) do
     local ResultRegister = IrGenerator:Generate(State, Ast)

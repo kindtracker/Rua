@@ -1188,6 +1188,26 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
   )
 end
 
+function CBackend:GenerateChangeFile(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    FileName = %q;
+]],
+    Ir[2]
+  )
+end
+
+function CBackend:GenerateChangeRow(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    Row = %d;
+]],
+    Ir[2]
+  )
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     NewContext = CBackend.GenerateNewContext,
@@ -1227,6 +1247,8 @@ function CBackend:Generate(State, Ir)
     Not = CBackend.GenerateNot,
     Jump = CBackend.GenerateJump,
     JumpIfTrue = CBackend.GenerateJumpIfTrue,
+    File = CBackend.GenerateChangeFile,
+    Row = CBackend.GenerateChangeRow,
   }
 
   local GenerateIr = GenerateIrTable[Ir[1]]
