@@ -6,6 +6,7 @@
 typedef struct RuaValueType RuaValueType;
 typedef struct RuaTableType RuaTableType;
 typedef struct RuaFunctionType RuaFunctionType;
+typedef struct RuaState RuaState;
 
 typedef void (*RuaCFunction)();
 
@@ -40,6 +41,21 @@ struct RuaFunctionType {
   uint32_t Address;
   RuaCFunction CFunction;
   bool IsCFunction;
+};
+
+struct RuaState {
+  uint32_t Pc;
+  bool Running;
+  bool PcChanged;
+  const char *FileName;
+  int Row;
+  ContextType *CurrentContext;
+  ValueType Stack[STACK_CAPACITY];
+  int StackSize;
+  CallFrameType CallStack[CALLSTACK_CAPACITY];
+  int CallStackSize;
+  GlobalType Globals[GLOBAL_CAPACITY];
+  size_t GlobalCount;
 };
 
 void RuaPushValue(ValueType Value);

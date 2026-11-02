@@ -1,5 +1,5 @@
 local Rua = require("Rua.Rua")
-local CBackend = require("Rua.Backend.CBackend")
+local CBackend = require("Rua.CBackend.CBackend")
 
 local State = Rua.new()
 
