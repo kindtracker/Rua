@@ -379,6 +379,8 @@ function Tokenizer:Reset(State)
   Tokenizer.Character = ""
   State.File.Row = 1
   State.File.Column = 0
+  Tokenizer.StartRow = 1
+  Tokenizer.StartColumn = 1
 end
 
 function Tokenizer:Advance(State, Step)
@@ -393,18 +395,17 @@ function Tokenizer:Advance(State, Step)
     Tokenizer.Character = Character
 
     if Character == "\n" then
-      State.File.Row = State.File.Row + 1
+      State.File.Row = State.File.Row + Direction
       State.File.Column = 0
     else
-      State.File.Column = State.File.Column + 1
+      State.File.Column = State.File.Column + Direction
     end
   end
 end
 
 function Tokenizer:NewToken(State)
-  Tokenizer.Token.Row = State.File.Row
-  Tokenizer.Token.Column = State.File.Column
-
+  Tokenizer.Token.Row = Tokenizer.StartRow
+  Tokenizer.Token.Column = Tokenizer.StartColumn
   table.insert(State.Tokens, Tokenizer.Token)
   Tokenizer.Token = {}
 end
@@ -706,6 +707,9 @@ function Tokenizer:Tokenize(State)
   Tokenizer:Advance(State)
 
   while #Tokenizer.Character > 0 do
+    Tokenizer.StartRow = State.File.Row
+    Tokenizer.StartColumn = State.File.Column
+
     if StringHasLetter(BaseIdent, Tokenizer.Character) then
       Tokenizer:TokenizeIdent(State)
     elseif StringHasLetter(BasePunct, Tokenizer.Character) then
