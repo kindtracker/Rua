@@ -19,8 +19,8 @@ local CBackend = {}
   Generate Return: Implemented
   Generate TablePush: Implemented
   Generate NewFunction: Implemented
-  Generate Index: Not Implemented
-  Generate NewIndex: Not Implemented
+  Generate Index: Implemented
+  Generate NewIndex: Implemented
   Generate Jump: Implemented
   Generate JumpIfTrue: Implemented
 
@@ -41,6 +41,16 @@ local CBackend = {}
   Generate GreaterThan: Implemented
   Generate GreaterThanOrEqual: Implemented
 ]]
+
+function CBackend:CreateState(Ir, IrFunctions)
+  return {
+    CCode = "",
+    Pc = 1,
+
+    Ir = Ir or {},
+    IrFunctions = IrFunctions or {},
+  }
+end
 
 function CBackend:PutFormatted(State, ...)
   State.CCode = State.CCode .. string.format(...)
@@ -85,6 +95,7 @@ function CBackend:PutRuntimeStart(State)
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <limits.h>
 
 #define REGISTER_CAPACITY 256
 #define STACK_CAPACITY 256
@@ -96,7 +107,7 @@ function CBackend:PutRuntimeStart(State)
     fflush(stdout);               \
     fprintf(stderr, __VA_ARGS__); \
     fputc('\n', stderr);          \
-    exit(1);                     \
+    exit(1);                      \
   } while (0)
 
 typedef enum {
@@ -113,7 +124,7 @@ typedef struct TableType TableType;
 typedef struct FunctionType FunctionType;
 typedef struct ContextType ContextType;
 
-typedef void (*RuaCFunction)();
+typedef void (*RuaCFunction)(void);
 
 struct ValueType {
   ValueTypeEnum Type;
@@ -160,6 +171,7 @@ typedef struct {
 
 uint32_t Pc = 1;
 bool Running = true;
+bool PcChanged = false;
 
 ContextType *CurrentContext = NULL;
 
@@ -172,7 +184,7 @@ int CallStackSize = 0;
 GlobalType Globals[GLOBAL_CAPACITY];
 size_t GlobalCount = 0;
 
-static ContextType *CreateContext() {
+static ContextType *CreateContext(void) {
   ContextType *Context = calloc(1, sizeof(ContextType));
 
   if (!Context) {
@@ -182,18 +194,13 @@ static ContextType *CreateContext() {
   return Context;
 }
 
-static void NewContext() {
-  ContextType *Context = CreateContext();
-
-  if (!Context) {
-    return;
+static void NewContext(void) {
+  if (CallStackSize > 0) {
+    Crash("0x%%x: NewContext: Cannot replace a context during a function call", Pc);
   }
 
-  if (CurrentContext) {
-    free(CurrentContext);
-  }
-
-  CurrentContext = Context;
+  free(CurrentContext);
+  CurrentContext = CreateContext();
 }
 
 static ValueType *GetRegister(int Register) {
@@ -206,7 +213,7 @@ static ValueType *GetRegister(int Register) {
   return &CurrentContext->Registers[Register];
 }
 
-static ValueType CreateNil() {
+static ValueType CreateNil(void) {
   ValueType Result = {0};
   Result.Type = RuaNil;
   return Result;
@@ -230,7 +237,7 @@ static void Push(ValueType *Register) {
   Stack[StackSize++] = *Register;
 }
 
-static ValueType Pop() {
+static ValueType Pop(void) {
   if (StackSize <= 0) {
     Crash("0x%%x: Pop: Attempt to pop from an empty stack", Pc);
   }
@@ -238,7 +245,7 @@ static ValueType Pop() {
   return Stack[--StackSize];
 }
 
-static void ClearStack() {
+static void ClearStack(void) {
   memset(Stack, 0, sizeof(Stack));
   StackSize = 0;
 }
@@ -250,6 +257,11 @@ static TableType *NewTable(size_t Capacity) {
     Crash("0x%%x: NewTable: Failed to allocate table", Pc);
   }
 
+  if (Capacity > SIZE_MAX / sizeof(TableFieldType)) {
+    free(Table);
+    Crash("0x%%x: NewTable: Table capacity overflow", Pc);
+  }
+
   Table->Capacity = Capacity;
 
   if (Capacity > 0) {
@@ -257,7 +269,7 @@ static TableType *NewTable(size_t Capacity) {
 
     if (!Table->Fields) {
       free(Table);
-      Crash("0x%%x: NewTable: Failed to allocate table items (Capacity %%zu)", Pc, Capacity);
+      Crash("0x%%x: NewTable: Failed to allocate table fields", Pc);
     }
   }
 
@@ -284,10 +296,7 @@ static bool ValuesEqual(ValueType Left, ValueType Right) {
         return Left.Value.String == Right.Value.String;
       }
 
-      return strcmp(
-        Left.Value.String,
-        Right.Value.String
-      ) == 0;
+      return strcmp(Left.Value.String, Right.Value.String) == 0;
 
     case RuaFunction:
       return Left.Value.Function == Right.Value.Function;
@@ -304,10 +313,19 @@ static void TablePush(TableType *Table, ValueType Key, ValueType Value) {
     Crash("0x%%x: TablePush: Attempt to push a field into a non-table", Pc);
   }
 
+  if (Key.Type == RuaNil) {
+    Crash("0x%%x: TablePush: Table index is nil", Pc);
+  }
+
   if (Table->Count >= Table->Capacity) {
     size_t NewCapacity = Table->Capacity == 0
       ? 4
       : Table->Capacity * 2;
+
+    if (NewCapacity < Table->Capacity ||
+        NewCapacity > SIZE_MAX / sizeof(TableFieldType)) {
+      Crash("0x%%x: TablePush: Table capacity overflow", Pc);
+    }
 
     TableFieldType *NewFields = realloc(
       Table->Fields,
@@ -315,7 +333,7 @@ static void TablePush(TableType *Table, ValueType Key, ValueType Value) {
     );
 
     if (!NewFields) {
-      Crash("0x%%x: TablePush: Failed to reallocate table fields (Capacity %%zu -> %%zu)", Pc, Table->Capacity, NewCapacity);
+      Crash("0x%%x: TablePush: Failed to allocate table fields", Pc);
     }
 
     Table->Fields = NewFields;
@@ -328,10 +346,13 @@ static void TablePush(TableType *Table, ValueType Key, ValueType Value) {
   };
 }
 
-
 static ValueType TableIndex(TableType *Table, ValueType Key) {
   if (!Table) {
-    Crash("0x%%x: TableGet: Attempt to index a non-table", Pc);
+    Crash("0x%%x: TableIndex: Attempt to index a non-table", Pc);
+  }
+
+  if (Key.Type == RuaNil) {
+    Crash("0x%%x: TableIndex: Table index is nil", Pc);
   }
 
   for (size_t Idx = 0; Idx < Table->Count; Idx++) {
@@ -347,22 +368,43 @@ static ValueType TableIndex(TableType *Table, ValueType Key) {
 
 static void TableNewIndex(TableType *Table, ValueType Key, ValueType Value) {
   if (!Table) {
-    Crash("0x%%x: TableNewIndex: Attempt to index a non-table", Pc);
+    Crash("0x%%x: TableNewIndex: Attempt to newindex a non-table", Pc);
+  }
+
+  if (Key.Type == RuaNil) {
+    Crash("0x%%x: TableNewIndex: Table index is nil", Pc);
   }
 
   for (size_t Idx = 0; Idx < Table->Count; Idx++) {
     TableFieldType *Field = &Table->Fields[Idx];
 
     if (ValuesEqual(Field->Key, Key)) {
-      Field->Value = Value;
+      if (Value.Type == RuaNil) {
+        memmove(
+          &Table->Fields[Idx],
+          &Table->Fields[Idx + 1],
+          (Table->Count - Idx - 1) * sizeof(TableFieldType)
+        );
+
+        Table->Count--;
+      } else {
+        Field->Value = Value;
+      }
+
       return;
     }
   }
 
-  TablePush(Table, Key, Value);
+  if (Value.Type != RuaNil) {
+    TablePush(Table, Key, Value);
+  }
 }
 
 static void SetGlobal(const char *Name, ValueType Value) {
+  if (!Name) {
+    Crash("0x%%x: SetGlobal: Attempt to use a NULL global name", Pc);
+  }
+
   for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
     if (strcmp(Globals[Idx].Name, Name) == 0) {
       Globals[Idx].Value = Value;
@@ -370,8 +412,12 @@ static void SetGlobal(const char *Name, ValueType Value) {
     }
   }
 
+  if (Value.Type == RuaNil) {
+    return;
+  }
+
   if (GlobalCount >= GLOBAL_CAPACITY) {
-    Crash("0x%%x: SetGlobal: Global table overflow (Capacity %%d)", Pc, GLOBAL_CAPACITY);
+    Crash("0x%%x: SetGlobal: Global table overflow", Pc);
   }
 
   Globals[GlobalCount].Name = Name;
@@ -380,6 +426,10 @@ static void SetGlobal(const char *Name, ValueType Value) {
 }
 
 static ValueType GetGlobal(const char *Name) {
+  if (!Name) {
+    Crash("0x%%x: GetGlobal: Attempt to use a NULL global name", Pc);
+  }
+
   for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
     if (strcmp(Globals[Idx].Name, Name) == 0) {
       return Globals[Idx].Value;
@@ -391,20 +441,27 @@ static ValueType GetGlobal(const char *Name) {
 
 static void Jump(uint32_t TargetPc) {
   if (CallStackSize >= CALLSTACK_CAPACITY) {
-    Crash("0x%%x: Jump: CallStack overflow (Capacity %%d)", Pc, CALLSTACK_CAPACITY);
+    Crash("0x%%x: Jump: CallStack overflow", Pc);
+  }
+
+  if (TargetPc == 0) {
+    Crash("0x%%x: Jump: Invalid target address", Pc);
   }
 
   ContextType *Context = CreateContext();
+
   CallFrameType *Frame = &CallStack[CallStackSize++];
 
   Frame->PreviousContext = CurrentContext;
-  Frame->ReturnAddress = Pc;
+  Frame->ReturnAddress = Pc + 1;
 
   CurrentContext = Context;
+
   Pc = TargetPc;
+  PcChanged = true;
 }
 
-static void Return() {
+static void Return(void) {
   if (CallStackSize <= 0) {
     Crash("0x%%x: Return: Attempt to return without an active function call", Pc);
   }
@@ -415,39 +472,10 @@ static void Return() {
 
   CurrentContext = Frame.PreviousContext;
   Pc = Frame.ReturnAddress;
+
+  PcChanged = true;
 }
-]]
-  )
-end
 
-function CBackend:PutRuntimeEnd(State)
-  CBackend:PutFormatted(
-    State,
-    [[
-int main(int Argc, char *Argv[]) {
-  LuaRuntimeInitialize();
-
-#ifdef RUA_USER_INITIALIZE
-  RuaUserInitialize();
-#endif
-
-  while (Running) {
-    Execute();
-
-    if (Running) {
-      Pc++;
-    }
-  }
-
-  while (CallStackSize > 0) {
-    free(CurrentContext);
-
-    CallFrameType Frame = CallStack[--CallStackSize];
-    CurrentContext = Frame.PreviousContext;
-  }
-
-  return 0;
-}
 ]]
   )
 end
@@ -465,7 +493,6 @@ void RuaPushBoolean(bool Value) {
   ValueType Result = {0};
   Result.Type = RuaBoolean;
   Result.Value.Boolean = Value;
-
   Push(&Result);
 }
 
@@ -473,7 +500,6 @@ void RuaPushNumber(double Value) {
   ValueType Result = {0};
   Result.Type = RuaNumber;
   Result.Value.Number = Value;
-
   Push(&Result);
 }
 
@@ -481,19 +507,14 @@ void RuaPushString(const char *Value) {
   ValueType Result = {0};
   Result.Type = RuaString;
   Result.Value.String = Value;
-
   Push(&Result);
 }
 
-void RuaPop() {
-  if (StackSize <= 0) {
-    Crash("RuaPop: Attempt to pop from an empty stack");
-  }
-
-  StackSize--;
+void RuaPop(void) {
+  (void)Pop();
 }
 
-double RuaPopNumber() {
+double RuaPopNumber(void) {
   ValueType Value = Pop();
 
   if (Value.Type != RuaNumber) {
@@ -503,7 +524,7 @@ double RuaPopNumber() {
   return Value.Value.Number;
 }
 
-const char *RuaPopString() {
+const char *RuaPopString(void) {
   ValueType Value = Pop();
 
   if (Value.Type != RuaString) {
@@ -513,7 +534,7 @@ const char *RuaPopString() {
   return Value.Value.String;
 }
 
-bool RuaPopBoolean() {
+bool RuaPopBoolean(void) {
   ValueType Value = Pop();
 
   if (Value.Type != RuaBoolean) {
@@ -523,24 +544,19 @@ bool RuaPopBoolean() {
   return Value.Value.Boolean;
 }
 
-void RuaGetGlobal(const char *Name) { 
+void RuaGetGlobal(const char *Name) {
   ValueType Result = GetGlobal(Name);
   Push(&Result);
 }
 
 void RuaSetGlobal(const char *Name) {
-  if (StackSize <= 0) {
-    Crash("RuaSetGlobal: Attempt to set global with an empty stack");
-  }
-
   SetGlobal(Name, Pop());
 }
 
-void RuaCreateTable() {
+void RuaCreateTable(void) {
   ValueType Result = {0};
   Result.Type = RuaTable;
   Result.Value.Table = NewTable(0);
-
   Push(&Result);
 }
 
@@ -564,22 +580,27 @@ void RuaPushCFunction(RuaCFunction Function) {
 
   Push(&Value);
 }
-  ]]
+
+]]
   )
 end
 
 function CBackend:PutLuaRuntime(State)
-  CBackend:PutFormatted(State, [[
-static void Print() {
+  CBackend:PutFormatted(
+    State,
+    [[
+static void Print(void) {
   const char *String = RuaPopString();
   printf("%%s\n", String);
 }
 
-static void LuaRuntimeInitialize() {
+static void LuaRuntimeInitialize(void) {
   RuaPushCFunction(Print);
   RuaSetGlobal("print");
 }
-]] .. "\n")
+
+]]
+  )
 end
 
 function CBackend:GenerateLoadString(State, Ir)
@@ -588,10 +609,8 @@ function CBackend:GenerateLoadString(State, Ir)
     [[
     ValueType *Register = GetRegister(%d);
 
-    if (Register) {
-      Register->Type = RuaString;
-      Register->Value.String = %s;
-    }
+    Register->Type = RuaString;
+    Register->Value.String = %s;
 ]],
     Ir[3],
     EscapeCString(Ir[2])
@@ -604,10 +623,8 @@ function CBackend:GenerateLoadNumber(State, Ir)
     [[
     ValueType *Register = GetRegister(%d);
 
-    if (Register) {
-      Register->Type = RuaNumber;
-      Register->Value.Number = %g;
-    }
+    Register->Type = RuaNumber;
+    Register->Value.Number = %.17g;
 ]],
     Ir[3],
     Ir[2]
@@ -620,10 +637,8 @@ function CBackend:GenerateLoadBoolean(State, Ir)
     [[
     ValueType *Register = GetRegister(%d);
 
-    if (Register) {
-      Register->Type = RuaBoolean;
-      Register->Value.Boolean = %s;
-    }
+    Register->Type = RuaBoolean;
+    Register->Value.Boolean = %s;
 ]],
     Ir[3],
     Ir[2] and "true" or "false"
@@ -634,11 +649,7 @@ function CBackend:GenerateLoadNil(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Register = GetRegister(%d);
-
-    if (Register) {
-      PutNil(Register);
-    }
+    PutNil(GetRegister(%d));
 ]],
     Ir[2]
   )
@@ -675,9 +686,7 @@ function CBackend:GenerateCopy(State, Ir)
     ValueType *SourceRegister = GetRegister(%d);
     ValueType *DestinationRegister = GetRegister(%d);
 
-    if (SourceRegister && DestinationRegister) {
-      *DestinationRegister = *SourceRegister;
-    }
+    *DestinationRegister = *SourceRegister;
 ]],
     Ir[2],
     Ir[3]
@@ -690,33 +699,31 @@ function CBackend:GenerateNewTable(State, Ir)
     [[
     ValueType *ResultRegister = GetRegister(%d);
 
-    if (ResultRegister) {
-      ResultRegister->Type = RuaTable;
-      ResultRegister->Value.Table = NewTable(%d);
-    }
+    ResultRegister->Type = RuaTable;
+    ResultRegister->Value.Table = NewTable(%d);
 ]],
     Ir[2],
-    Ir[2]
+    Ir[3] or 0
   )
 end
 
-function CBackend:GenerateTablePush(State, Ir)
+function CBackend:GenerateNewFunction(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *TableRegister = GetRegister(%d);
-    ValueType *ValueRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
 
-    if (!TableRegister || TableRegister->Type != RuaTable ||
-        !ValueRegister) {
-      Crash("0x%%x: TablePush: Invalid table or register", Pc);
+    FunctionType *Function = calloc(1, sizeof(FunctionType));
+
+    if (!Function) {
+      Crash("0x%%x: NewFunction: Failed to allocate function", Pc);
     }
 
-    ValueType Key = {0};
-    Key.Type = RuaNumber;
-    Key.Value.Number = (double)(TableRegister->Value.Table->Count + 1);
+    Function->Address = %d;
+    Function->IsCFunction = false;
 
-    TablePush(TableRegister->Value.Table, Key, *ValueRegister);
+    ResultRegister->Type = RuaFunction;
+    ResultRegister->Value.Function = Function;
 ]],
     Ir[2],
     Ir[3]
@@ -727,11 +734,7 @@ function CBackend:GeneratePush(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Register = GetRegister(%d);
-
-    if (Register) {
-      Push(Register);
-    }
+    Push(GetRegister(%d));
 ]],
     Ir[2]
   )
@@ -741,11 +744,7 @@ function CBackend:GeneratePop(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Register = GetRegister(%d);
-
-    if (Register) {
-      *Register = Pop();
-    }
+    *GetRegister(%d) = Pop();
 ]],
     Ir[2]
   )
@@ -767,9 +766,11 @@ function CBackend:GenerateGetGlobal(State, Ir)
     ValueType *Name = GetRegister(%d);
     ValueType *Result = GetRegister(%d);
 
-    if (Result && Name && Name->Type == RuaString) {
-      *Result = GetGlobal(Name->Value.String);
+    if (Name->Type != RuaString) {
+      Crash("0x%%x: GetGlobal: Expected a string global name", Pc);
     }
+
+    *Result = GetGlobal(Name->Value.String);
 ]],
     Ir[2],
     Ir[3]
@@ -783,12 +784,88 @@ function CBackend:GenerateSetGlobal(State, Ir)
     ValueType *Name = GetRegister(%d);
     ValueType *Value = GetRegister(%d);
 
-    if (Name && Value && Name->Type == RuaString) {
-      SetGlobal(Name->Value.String, *Value);
+    if (Name->Type != RuaString) {
+      Crash("0x%%x: SetGlobal: Expected a string global name", Pc);
     }
+
+    SetGlobal(Name->Value.String, *Value);
 ]],
     Ir[2],
     Ir[3]
+  )
+end
+
+function CBackend:GenerateTablePush(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *TableRegister = GetRegister(%d);
+    ValueType *ValueRegister = GetRegister(%d);
+
+    if (TableRegister->Type != RuaTable) {
+      Crash("0x%%x: TablePush: Expected a table", Pc);
+    }
+
+    ValueType Key = {0};
+    Key.Type = RuaNumber;
+    Key.Value.Number =
+      (double)(TableRegister->Value.Table->Count + 1);
+
+    TablePush(
+      TableRegister->Value.Table,
+      Key,
+      *ValueRegister
+    );
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
+function CBackend:GenerateIndex(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *TableRegister = GetRegister(%d);
+    ValueType *KeyRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (TableRegister->Type != RuaTable) {
+      Crash("0x%%x: TableIndex: Attempt to index a non-table", Pc);
+    }
+
+    *ResultRegister = TableIndex(
+      TableRegister->Value.Table,
+      *KeyRegister
+    );
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
+  )
+end
+
+function CBackend:GenerateNewIndex(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *TableRegister = GetRegister(%d);
+    ValueType *KeyRegister = GetRegister(%d);
+    ValueType *ValueRegister = GetRegister(%d);
+
+    if (TableRegister->Type != RuaTable) {
+      Crash("0x%%x: TableNewIndex: Attempt to newindex a non-table", Pc);
+    }
+
+    TableNewIndex(
+      TableRegister->Value.Table,
+      *KeyRegister,
+      *ValueRegister
+    );
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
   )
 end
 
@@ -798,15 +875,17 @@ function CBackend:GenerateCallFunction(State, Ir)
     [[
     ValueType *Register = GetRegister(%d);
 
-    if (Register && Register->Type == RuaFunction) {
-      FunctionType *Function = Register->Value.Function;
-      if (Function->IsCFunction) {
-        Function->CFunction();
-      } else {
-        Jump(Function->Address);
-      }
+    if (Register->Type != RuaFunction ||
+        !Register->Value.Function) {
+      Crash("0x%%x: CallFunction: Attempt to call a non-function value (Register %%d)", Pc, %d);
+    }
+
+    FunctionType *Function = Register->Value.Function;
+
+    if (Function->IsCFunction) {
+      Function->CFunction();
     } else {
-      Crash("0x%%x: CallFunction: Attempt to call a value a non-function value (Register %%d)", Pc, %d);
+      Jump(Function->Address);
     }
 ]],
     Ir[2],
@@ -847,62 +926,6 @@ local function GenerateNumericBinary(State, Ir, Name, Expression)
   )
 end
 
-local function GenerateComparison(State, Ir, Name, Operator)
-  CBackend:PutFormatted(
-    State,
-    [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
-    ValueType *ResultRegister = GetRegister(%d);
-
-    int Comparison = 0;
-
-    if (LeftRegister->Type == RuaNumber &&
-        RightRegister->Type == RuaNumber) {
-      double Left = LeftRegister->Value.Number;
-      double Right = RightRegister->Value.Number;
-
-      Comparison = (Left > Right) - (Left < Right);
-    } else if (LeftRegister->Type == RuaString &&
-               RightRegister->Type == RuaString) {
-      Comparison = strcmp(
-        LeftRegister->Value.String,
-        RightRegister->Value.String
-      );
-    } else {
-      Crash("0x%%x: %s: Expected two numbers or two strings", Pc);
-    }
-
-    ResultRegister->Type = RuaBoolean;
-    ResultRegister->Value.Boolean = Comparison %s 0;
-]],
-    Ir[2],
-    Ir[3],
-    Ir[4],
-    Name,
-    Operator
-  )
-end
-
-local function GenerateEquality(State, Ir, Negate)
-  CBackend:PutFormatted(
-    State,
-    [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
-    ValueType *ResultRegister = GetRegister(%d);
-
-    bool Equal = ValuesEqual(*LeftRegister, *RightRegister);
-    ResultRegister->Type = RuaBoolean;
-    ResultRegister->Value.Boolean = %s;
-]],
-    Ir[2],
-    Ir[3],
-    Ir[4],
-    Negate and "!Equal" or "Equal"
-  )
-end
-
 function CBackend:GenerateAdd(State, Ir)
   GenerateNumericBinary(State, Ir, "Add", "LeftRegister->Value.Number + RightRegister->Value.Number")
 end
@@ -936,10 +959,15 @@ function CBackend:GenerateModulo(State, Ir)
     double Right = RightRegister->Value.Number;
     double Value = fmod(Left, Right);
 
-    if (Value != 0.0 &&
-        ((Value < 0.0) != (Right < 0.0))) {
-      Value += Right;
+    if (Right == 0.0) {
+      Value = INFINITY;
+    } else {
+      if (Value != 0.0 &&
+          ((Value < 0.0) != (Right < 0.0))) {
+        Value += Right;
+      }
     }
+
 
     ResultRegister->Type = RuaNumber;
     ResultRegister->Value.Number = Value;
@@ -966,7 +994,8 @@ function CBackend:GenerateNegate(State, Ir)
     }
 
     ResultRegister->Type = RuaNumber;
-    ResultRegister->Value.Number = -OperandRegister->Value.Number;
+    ResultRegister->Value.Number =
+      -OperandRegister->Value.Number;
 ]],
     Ir[2],
     Ir[3]
@@ -1035,6 +1064,72 @@ function CBackend:GenerateOr(State, Ir)
   )
 end
 
+local function GenerateComparison(State, Ir, Name, Operator)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    int Comparison = 0;
+
+    if (LeftRegister->Type == RuaNumber &&
+        RightRegister->Type == RuaNumber) {
+      double Left = LeftRegister->Value.Number;
+      double Right = RightRegister->Value.Number;
+
+      Comparison = (Left > Right) - (Left < Right);
+    } else if (LeftRegister->Type == RuaString &&
+               RightRegister->Type == RuaString) {
+
+      if (!LeftRegister->Value.String ||
+          !RightRegister->Value.String) {
+        Crash("0x%%x: %s: Invalid string operand", Pc);
+      }
+
+      Comparison = strcmp(
+        LeftRegister->Value.String,
+        RightRegister->Value.String
+      );
+    } else {
+      Crash("0x%%x: %s: Expected two numbers or two strings", Pc);
+    }
+
+    ResultRegister->Type = RuaBoolean;
+    ResultRegister->Value.Boolean = Comparison %s 0;
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4],
+    Name,
+    Operator
+  )
+end
+
+local function GenerateEquality(State, Ir, Negate)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *LeftRegister = GetRegister(%d);
+    ValueType *RightRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    bool Equal = ValuesEqual(
+      *LeftRegister,
+      *RightRegister
+    );
+
+    ResultRegister->Type = RuaBoolean;
+    ResultRegister->Value.Boolean = %s;
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4],
+    Negate and "!Equal" or "Equal"
+  )
+end
+
 function CBackend:GenerateEqual(State, Ir)
   GenerateEquality(State, Ir, false)
 end
@@ -1057,26 +1152,6 @@ end
 
 function CBackend:GenerateGreaterThanOrEqual(State, Ir)
   GenerateComparison(State, Ir, "GreaterThanOrEqual", ">=")
-end
-
-function CBackend:GenerateNewFunction(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-    ValueType *ResultRegister = GetRegister(%d);
-    RuaFunction *Function = malloc(sizeof(FunctionType));
-    if (!Function) {
-      Crash("0x%%x: CreateContext: Failed to allocate function", Pc);
-    }
-
-    Function->Address = %d;
-    Function->IsCFunction = false;
-    ResultRegister->Type = RuaFunction;
-    ResultRegister->Value.Function = Function;
-]],
-    Ir[2],
-    Ir[3]
-  )
 end
 
 function CBackend:GenerateJump(State, Ir)
@@ -1102,51 +1177,7 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
     }
 ]],
     Ir[2],
-    Ir[3],
     Ir[3]
-  )
-end
-
-function CBackend:GenerateIndex(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-    ValueType *TableRegister = GetRegister(%d);
-    ValueType *KeyRegister = GetRegister(%d);
-    ValueType *ResultRegister = GetRegister(%d);
-
-    if (TableRegister->Type != RuaTable) {
-      Crash("0x%%x: TableGet: Attempt to index a non-table", Pc);
-    }
-
-    *ResultRegister = TableIndex(
-      TableRegister->Value.Table,
-      *KeyRegister
-    );
-]],
-    Ir[2],
-    Ir[3],
-    Ir[4]
-  )
-end
-
-function CBackend:GenerateNewIndex(State, Ir)
-  CBackend:PutFormatted(
-    State,
-    [[
-    ValueType *TableRegister = GetRegister(%d);
-    ValueType *KeyRegister = GetRegister(%d);
-    ValueType *ValueRegister = GetRegister(%d);
-
-    if (TableRegister->Type != RuaTable) {
-      Crash("0x%%x: TableNewIndex: Attempt to assign an index to a non-table", Pc);
-    }
-
-    TableNewIndex(TableRegister->Value.Table, *KeyRegister, *ValueRegister);
-]],
-    Ir[2],
-    Ir[3],
-    Ir[4]
   )
 end
 
@@ -1167,6 +1198,8 @@ function CBackend:Generate(State, Ir)
     Pop = CBackend.GeneratePop,
     ClearStack = CBackend.GenerateClearStack,
     TablePush = CBackend.GenerateTablePush,
+    Index = CBackend.GenerateIndex,
+    NewIndex = CBackend.GenerateNewIndex,
     CallFunction = CBackend.GenerateCallFunction,
     Return = CBackend.GenerateReturn,
     Add = CBackend.GenerateAdd,
@@ -1175,8 +1208,6 @@ function CBackend:Generate(State, Ir)
     Divide = CBackend.GenerateDivide,
     Mod = CBackend.GenerateModulo,
     Pow = CBackend.GeneratePower,
-    Negative = CBackend.GenerateNegate,
-    Not = CBackend.GenerateNot,
     And = CBackend.GenerateAnd,
     Or = CBackend.GenerateOr,
     Equal = CBackend.GenerateEqual,
@@ -1185,10 +1216,10 @@ function CBackend:Generate(State, Ir)
     LessThanOrEqual = CBackend.GenerateLessThanOrEqual,
     GreaterThan = CBackend.GenerateGreaterThan,
     GreaterThanOrEqual = CBackend.GenerateGreaterThanOrEqual,
+    Negative = CBackend.GenerateNegate,
+    Not = CBackend.GenerateNot,
     Jump = CBackend.GenerateJump,
     JumpIfTrue = CBackend.GenerateJumpIfTrue,
-    Index = CBackend.GenerateIndex,
-    NewIndex = CBackend.GenerateNewIndex,
   }
 
   local GenerateIr = GenerateIrTable[Ir[1]]
@@ -1237,9 +1268,54 @@ function CBackend:GenerateBlock(State, IrProgram)
   end
 end
 
+function CBackend:PutRuntimeEnd(State)
+  CBackend:PutFormatted(
+    State,
+    [[
+int main(int Argc, char *Argv[]) {
+  (void)Argc;
+  (void)Argv;
+
+  LuaRuntimeInitialize();
+
+#ifdef RUA_USER_INITIALIZE
+  RuaUserInitialize();
+#endif
+
+  while (Running) {
+    PcChanged = false;
+
+    Execute();
+
+    if (Running && !PcChanged) {
+      Pc++;
+    }
+  }
+
+  while (CallStackSize > 0) {
+    free(CurrentContext);
+
+    CallFrameType Frame = CallStack[--CallStackSize];
+    CurrentContext = Frame.PreviousContext;
+  }
+
+  free(CurrentContext);
+  CurrentContext = NULL;
+
+  return 0;
+}
+]]
+  )
+end
+
 function CBackend:Compile(State, FileName, OutputFile, Data)
+  State = State or CBackend:CreateState()
+
   State.CCode = ""
   State.Pc = 1
+
+  State.Ir = State.Ir or {}
+  State.IrFunctions = State.IrFunctions or {}
 
   CBackend:PutRuntimeStart(State)
   CBackend:PutApiCode(State)
@@ -1248,15 +1324,17 @@ function CBackend:Compile(State, FileName, OutputFile, Data)
   CBackend:PutFormatted(
     State,
     [[
-static void Execute() {
+static void Execute(void) {
   switch (Pc) {
     // Main
-  ]]
+]]
   )
 
   CBackend:GenerateBlock(State, State.Ir)
+
   for _, Function in ipairs(State.IrFunctions) do
     CBackend:PutFormatted(State, "\n")
+
     CBackend:PutFormatted(
       State,
       [[
@@ -1268,19 +1346,34 @@ static void Execute() {
     CBackend:GenerateBlock(State, Function.IrProgram)
   end
 
-  CBackend:PutFormatted(State, [[
+  CBackend:PutFormatted(
+    State,
+    [[
   default:
     Crash("0x%%x: Execute: Program counter out of bounds", Pc);
     break;
   }
 }
-]] .. "\n")
+
+]]
+  )
 
   CBackend:PutRuntimeEnd(State)
 
   if OutputFile then
-    local CFile = io.open(OutputFile, "w")
-    CFile:write(State.CCode)
+    local CFile, Error = io.open(OutputFile, "w")
+
+    if not CFile then
+      error("CBackend: Failed to open output file: " .. tostring(Error))
+    end
+
+    local Success, WriteError = CFile:write(State.CCode)
+
+    if not Success then
+      CFile:close()
+      error("CBackend: Failed to write output file: " .. tostring(WriteError))
+    end
+
     CFile:close()
   end
 
