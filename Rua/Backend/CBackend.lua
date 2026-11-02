@@ -127,8 +127,13 @@ struct ValueType {
   } Value;
 };
 
+typedef struct {
+  ValueType Key;
+  ValueType Value;
+} TableFieldType;
+
 struct TableType {
-  ValueType *Items;
+  TableFieldType *Fields;
   size_t Count;
   size_t Capacity;
 };
@@ -248,9 +253,9 @@ static TableType *NewTable(size_t Capacity) {
   Table->Capacity = Capacity;
 
   if (Capacity > 0) {
-    Table->Items = calloc(Capacity, sizeof(ValueType));
+    Table->Fields = calloc(Capacity, sizeof(TableFieldType));
 
-    if (!Table->Items) {
+    if (!Table->Fields) {
       free(Table);
       Crash("0x%%x: NewTable: Failed to allocate table items (Capacity %%zu)", Pc, Capacity);
     }
@@ -259,9 +264,44 @@ static TableType *NewTable(size_t Capacity) {
   return Table;
 }
 
-static void TablePush(TableType *Table, ValueType Value) {
+static bool ValuesEqual(ValueType Left, ValueType Right) {
+  if (Left.Type != Right.Type) {
+    return false;
+  }
+
+  switch (Left.Type) {
+    case RuaNil:
+      return true;
+
+    case RuaBoolean:
+      return Left.Value.Boolean == Right.Value.Boolean;
+
+    case RuaNumber:
+      return Left.Value.Number == Right.Value.Number;
+
+    case RuaString:
+      if (!Left.Value.String || !Right.Value.String) {
+        return Left.Value.String == Right.Value.String;
+      }
+
+      return strcmp(
+        Left.Value.String,
+        Right.Value.String
+      ) == 0;
+
+    case RuaFunction:
+      return Left.Value.Function == Right.Value.Function;
+
+    case RuaTable:
+      return Left.Value.Table == Right.Value.Table;
+  }
+
+  return false;
+}
+
+static void TablePush(TableType *Table, ValueType Key, ValueType Value) {
   if (!Table) {
-    Crash("0x%%x: TablePush: Attempt to push a value into a non-table", Pc);
+    Crash("0x%%x: TablePush: Attempt to push a field into a non-table", Pc);
   }
 
   if (Table->Count >= Table->Capacity) {
@@ -269,20 +309,57 @@ static void TablePush(TableType *Table, ValueType Value) {
       ? 4
       : Table->Capacity * 2;
 
-    ValueType *NewItems = realloc(
-      Table->Items,
-      NewCapacity * sizeof(ValueType)
+    TableFieldType *NewFields = realloc(
+      Table->Fields,
+      NewCapacity * sizeof(TableFieldType)
     );
 
-    if (!NewItems) {
-      Crash("0x%%x: TablePush: Failed to reallocate table items (Capacity %%zu -> %%zu)", Pc, Table->Capacity, NewCapacity);
+    if (!NewFields) {
+      Crash("0x%%x: TablePush: Failed to reallocate table fields (Capacity %%zu -> %%zu)", Pc, Table->Capacity, NewCapacity);
     }
 
-    Table->Items = NewItems;
+    Table->Fields = NewFields;
     Table->Capacity = NewCapacity;
   }
 
-  Table->Items[Table->Count++] = Value;
+  Table->Fields[Table->Count++] = (TableFieldType) {
+    .Key = Key,
+    .Value = Value
+  };
+}
+
+
+static ValueType TableIndex(TableType *Table, ValueType Key) {
+  if (!Table) {
+    Crash("0x%%x: TableGet: Attempt to index a non-table", Pc);
+  }
+
+  for (size_t Idx = 0; Idx < Table->Count; Idx++) {
+    TableFieldType *Field = &Table->Fields[Idx];
+
+    if (ValuesEqual(Field->Key, Key)) {
+      return Field->Value;
+    }
+  }
+
+  return CreateNil();
+}
+
+static void TableNewIndex(TableType *Table, ValueType Key, ValueType Value) {
+  if (!Table) {
+    Crash("0x%%x: TableNewIndex: Attempt to index a non-table", Pc);
+  }
+
+  for (size_t Idx = 0; Idx < Table->Count; Idx++) {
+    TableFieldType *Field = &Table->Fields[Idx];
+
+    if (ValuesEqual(Field->Key, Key)) {
+      Field->Value = Value;
+      return;
+    }
+  }
+
+  TablePush(Table, Key, Value);
 }
 
 static void SetGlobal(const char *Name, ValueType Value) {
@@ -595,8 +672,8 @@ function CBackend:GenerateCopy(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Source = GetRegister(%d);
-    ValueType *Destination = GetRegister(%d);
+    ValueType *SourceRegister = GetRegister(%d);
+    ValueType *DestinationRegister = GetRegister(%d);
 
     if (SourceRegister && DestinationRegister) {
       *DestinationRegister = *SourceRegister;
@@ -613,12 +690,12 @@ function CBackend:GenerateNewTable(State, Ir)
     [[
     ValueType *ResultRegister = GetRegister(%d);
 
-    if (Result) {
+    if (ResultRegister) {
       ResultRegister->Type = RuaTable;
       ResultRegister->Value.Table = NewTable(%d);
     }
 ]],
-    Ir[3],
+    Ir[2],
     Ir[2]
   )
 end
@@ -630,17 +707,19 @@ function CBackend:GenerateTablePush(State, Ir)
     ValueType *TableRegister = GetRegister(%d);
     ValueType *ValueRegister = GetRegister(%d);
 
-    if (TableRegister &&
-        ValueRegister &&
-        TableRegister->Type == RuaTable) {
-      TablePush(TableRegister->Value.Table, *ValueRegister);
-    } else {
-      Crash("0x%x: TablePush: Attempt to push a value into a non-table (Register %d)", Pc, Register);
+    if (!TableRegister || TableRegister->Type != RuaTable ||
+        !ValueRegister) {
+      Crash("0x%%x: TablePush: Invalid table or register", Pc);
     }
+
+    ValueType Key = {0};
+    Key.Type = RuaNumber;
+    Key.Value.Number = (double)(TableRegister->Value.Table->Count + 1);
+
+    TablePush(TableRegister->Value.Table, Key, *ValueRegister);
 ]],
     Ir[2],
-    Ir[3],
-    Ir[2]
+    Ir[3]
   )
 end
 
@@ -813,43 +892,7 @@ local function GenerateEquality(State, Ir, Negate)
     ValueType *RightRegister = GetRegister(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
-    bool Equal = false;
-
-    if (LeftRegister->Type == RightRegister->Type) {
-      switch (LeftRegister->Type) {
-        case RuaNil:
-          Equal = true;
-          break;
-
-        case RuaBoolean:
-          Equal = LeftRegister->Value.Boolean ==
-            RightRegister->Value.Boolean;
-          break;
-
-        case RuaNumber:
-          Equal = LeftRegister->Value.Number ==
-            RightRegister->Value.Number;
-          break;
-
-        case RuaString:
-          Equal = strcmp(
-            LeftRegister->Value.String,
-            RightRegister->Value.String
-          ) == 0;
-          break;
-
-        case RuaFunction:
-          Equal = LeftRegister->Value.Function ==
-            RightRegister->Value.Function;
-          break;
-
-        case RuaTable:
-          Equal = LeftRegister->Value.Table ==
-            RightRegister->Value.Table;
-          break;
-      }
-    }
-
+    bool Equal = ValuesEqual(*LeftRegister, *RightRegister);
     ResultRegister->Type = RuaBoolean;
     ResultRegister->Value.Boolean = %s;
 ]],
@@ -1064,6 +1107,49 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
   )
 end
 
+function CBackend:GenerateIndex(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *TableRegister = GetRegister(%d);
+    ValueType *KeyRegister = GetRegister(%d);
+    ValueType *ResultRegister = GetRegister(%d);
+
+    if (TableRegister->Type != RuaTable) {
+      Crash("0x%%x: TableGet: Attempt to index a non-table", Pc);
+    }
+
+    *ResultRegister = TableIndex(
+      TableRegister->Value.Table,
+      *KeyRegister
+    );
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
+  )
+end
+
+function CBackend:GenerateNewIndex(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *TableRegister = GetRegister(%d);
+    ValueType *KeyRegister = GetRegister(%d);
+    ValueType *ValueRegister = GetRegister(%d);
+
+    if (TableRegister->Type != RuaTable) {
+      Crash("0x%%x: TableNewIndex: Attempt to assign an index to a non-table", Pc);
+    }
+
+    TableNewIndex(TableRegister->Value.Table, *KeyRegister, *ValueRegister);
+]],
+    Ir[2],
+    Ir[3],
+    Ir[4]
+  )
+end
+
 function CBackend:Generate(State, Ir)
   local GenerateIrTable = {
     NewContext = CBackend.GenerateNewContext,
@@ -1101,6 +1187,8 @@ function CBackend:Generate(State, Ir)
     GreaterThanOrEqual = CBackend.GenerateGreaterThanOrEqual,
     Jump = CBackend.GenerateJump,
     JumpIfTrue = CBackend.GenerateJumpIfTrue,
+    Index = CBackend.GenerateIndex,
+    NewIndex = CBackend.GenerateNewIndex,
   }
 
   local GenerateIr = GenerateIrTable[Ir[1]]
