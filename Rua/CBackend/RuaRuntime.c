@@ -351,15 +351,12 @@ static void Jump(uint32_t TargetPc) {
   }
 
   ContextType *Context = CreateContext();
-
   CallFrameType *Frame = &CallStack[CallStackSize++];
-
   Frame->PreviousContext = CurrentContext;
   Frame->ReturnAddress = Pc + 1;
-
   CurrentContext = Context;
 
-  Pc = TargetPc - 1;
+  Pc = TargetPc;
   PcChanged = true;
 }
 
@@ -495,13 +492,13 @@ int RuaDefaultEntryPoint(int Argc, char *Argv[]) {
 #endif
 
   while (Running) {
-    if (Running && !PcChanged) {
-      Pc++;
-    }
+    PcChanged = false;
 
     RuaExecuteIr();
 
-    PcChanged = false;
+    if (Running && !PcChanged) {
+      Pc++;
+    }
   }
 
   while (CallStackSize > 0) {

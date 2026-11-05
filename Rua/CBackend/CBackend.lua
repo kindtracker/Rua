@@ -743,6 +743,14 @@ function CBackend:Generate(State, Ir)
   local GenerateIr = GenerateIrTable[Ir[1]]
 
   if GenerateIr then
+    CBackend:PutFormatted(
+      State,
+      [[
+    Pc = %d;
+]],
+      CBackend.Pc
+    )
+
     GenerateIr(CBackend, State, Ir)
 
     CBackend:PutFormatted(

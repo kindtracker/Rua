@@ -1875,7 +1875,7 @@ function IrGenerator:NewLabel(State)
   return Label
 end
 
-function IrGenerator:PushContext(State)
+function IrGenerator:PushContext(State, GenerateNewContext)
   local Context = {
     Registers = {},
     IrProgram = {},
@@ -1890,10 +1890,12 @@ function IrGenerator:PushContext(State)
   IrGenerator.IrProgram = Context.IrProgram
   table.insert(IrGenerator.Contexts, Context)
 
-  IrGenerator.Ir = {
-    [1] = "NewContext",
-  }
-  IrGenerator:NewIr(State)
+  if GenerateNewContext then
+    IrGenerator.Ir = {
+      [1] = "NewContext",
+    }
+    IrGenerator:NewIr(State)
+  end
 end
 
 function IrGenerator:PopContext(State, ExtraCode)
@@ -2569,7 +2571,7 @@ function IrGenerator:ResolveLabels(State, IrProgram)
 end
 
 function IrGenerator:GenerateIr(State)
-  IrGenerator:PushContext(State)
+  IrGenerator:PushContext(State, true)
 
   IrGenerator.Ir = {
     [1] = "File",
