@@ -1319,7 +1319,6 @@ function Parser:ParseIf(State, Statement)
     Parser:Advance(State)
   else
     Parser:ParseIf(State, Statement)
-    Parser:Advance(State)
   end
 end
 
@@ -1772,6 +1771,25 @@ function AstDesugar:DesugarGenericFor(State, Ast, Table)
   end
 end
 
+function AstDesugar:DesugarIf(State, Ast, Table)
+  local Current = Ast
+
+  while Current.ElseIf do
+    Current.Else = {
+      {
+        Kind = "If",
+        Condition = Current.ElseIf.Condition,
+        Body = Current.ElseIf.Body,
+      },
+    }
+
+    Current.ElseIf = nil
+    Current = Current.Else[1]
+  end
+
+  table.insert(Table, Ast)
+end
+
 function AstDesugar:Desugar(State, Ast)
   local Table = {}
 
@@ -1791,6 +1809,8 @@ function AstDesugar:Desugar(State, Ast)
     AstDesugar:DesugarFunction(State, Ast, Table)
   elseif Ast.Kind == "FunctionCall" and Ast.Name.Kind == "Member" then
     AstDesugar:DesugarFunctionCall(State, Ast, Table)
+  elseif Ast.Kind == "If" then
+    AstDesugar:DesugarIf(State, Ast, Table)
   else
     return { Ast }
   end
@@ -2360,8 +2380,6 @@ function IrGenerator:GenerateIf(State, Ast, Data)
     }
     IrGenerator:NewIr(State)
     IrGenerator:GenerateBody(State, Ast.Else, ElseBodyLabel)
-  elseif Ast.ElseIf then
-    IrGenerator:Generate(State, Ast.ElseIf)
   end
 
   IrGenerator:MarkNotUsed(State, ConditionRegister)

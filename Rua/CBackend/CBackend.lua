@@ -190,7 +190,7 @@ function CBackend:GenerateNewFunction(State, Ir)
     FunctionType *Function = calloc(1, sizeof(FunctionType));
 
     if (!Function) {
-      Crash("0x%%x: NewFunction: Failed to allocate function", Pc);
+      Crash("0x%%%%x: NewFunction: Failed to allocate function", Pc);
     }
 
     Function->Address = %d;
@@ -241,7 +241,7 @@ function CBackend:GenerateGetGlobal(State, Ir)
     ValueType *Result = GetRegister(%d);
 
     if (Name->Type != RuaString) {
-      Crash("0x%%x: GetGlobal: Expected a string global name", Pc);
+      Crash("0x%%%%x: GetGlobal: Expected a string global name", Pc);
     }
 
     *Result = GetGlobal(Name->Value.String);
@@ -259,7 +259,7 @@ function CBackend:GenerateSetGlobal(State, Ir)
     ValueType *Value = GetRegister(%d);
 
     if (Name->Type != RuaString) {
-      Crash("0x%%x: SetGlobal: Expected a string global name", Pc);
+      Crash("0x%%%%x: SetGlobal: Expected a string global name", Pc);
     }
 
     SetGlobal(Name->Value.String, *Value);
@@ -277,7 +277,7 @@ function CBackend:GenerateTablePush(State, Ir)
     ValueType *ValueRegister = GetRegister(%d);
 
     if (TableRegister->Type != RuaTable) {
-      Crash("0x%%x: TablePush: Expected a table", Pc);
+      Crash("0x%%%%x: TablePush: Expected a table", Pc);
     }
 
     ValueType Key = {0};
@@ -305,7 +305,7 @@ function CBackend:GenerateIndex(State, Ir)
     ValueType *ResultRegister = GetRegister(%d);
 
     if (TableRegister->Type != RuaTable) {
-      Crash("0x%%x: TableIndex: Attempt to index a non-table", Pc);
+      Crash("0x%%%%x: TableIndex: Attempt to index a non-table", Pc);
     }
 
     *ResultRegister = TableIndex(
@@ -328,7 +328,7 @@ function CBackend:GenerateNewIndex(State, Ir)
     ValueType *ValueRegister = GetRegister(%d);
 
     if (TableRegister->Type != RuaTable) {
-      Crash("0x%%x: TableNewIndex: Attempt to newindex a non-table", Pc);
+      Crash("0x%%%%x: TableNewIndex: Attempt to newindex a non-table", Pc);
     }
 
     TableNewIndex(
@@ -351,7 +351,7 @@ function CBackend:GenerateCallFunction(State, Ir)
 
     if (Register->Type != RuaFunction ||
         !Register->Value.Function) {
-      Crash("0x%%x: CallFunction: Attempt to call a non-function value (Register %%d)", Pc, %d);
+      Crash("0x%%%%x: CallFunction: Attempt to call a non-function value (Register %%d)", Pc, %d);
     }
 
     FunctionType *Function = Register->Value.Function;
@@ -387,7 +387,7 @@ local function GenerateNumericBinary(State, Ir, Name, Expression)
 
     if (LeftRegister->Type != RuaNumber ||
         RightRegister->Type != RuaNumber) {
-      Crash("0x%%x: %s: Expected number operands", Pc);
+      Crash("0x%%%%x: %s: Expected number operands", Pc);
     }
 
     ResultRegister->Type = RuaNumber;
@@ -427,7 +427,7 @@ function CBackend:GenerateModulo(State, Ir)
 
     if (LeftRegister->Type != RuaNumber ||
         RightRegister->Type != RuaNumber) {
-      Crash("0x%%x: Modulo: Expected number operands", Pc);
+      Crash("0x%%%%x: Modulo: Expected number operands", Pc);
     }
 
     double Left = LeftRegister->Value.Number;
@@ -465,7 +465,7 @@ function CBackend:GenerateNegate(State, Ir)
     ValueType *ResultRegister = GetRegister(%d);
 
     if (OperandRegister->Type != RuaNumber) {
-      Crash("0x%%x: Negate: Expected a number", Pc);
+      Crash("0x%%%%x: Negate: Expected a number", Pc);
     }
 
     ResultRegister->Type = RuaNumber;
@@ -560,7 +560,7 @@ local function GenerateComparison(State, Ir, Name, Operator)
 
       if (!LeftRegister->Value.String ||
           !RightRegister->Value.String) {
-        Crash("0x%%x: %s: Invalid string operand", Pc);
+        Crash("0x%%%%x: %s: Invalid string operand", Pc);
       }
 
       Comparison = strcmp(
@@ -568,7 +568,7 @@ local function GenerateComparison(State, Ir, Name, Operator)
         RightRegister->Value.String
       );
     } else {
-      Crash("0x%%x: %s: Expected two numbers or two strings", Pc);
+      Crash("0x%%%%x: %s: Expected two numbers or two strings", Pc);
     }
 
     ResultRegister->Type = RuaBoolean;
@@ -831,7 +831,7 @@ static void RuaExecuteIr() {
     State,
     [[
   default:
-    Crash("0x%%x: Execute: Program counter out of bounds", Pc);
+    Crash("0x%%%%x: Execute: Program counter out of bounds", Pc);
     break;
   }
 }
