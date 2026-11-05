@@ -23,6 +23,7 @@ local CBackend = {}
   Generate NewIndex: Implemented
   Generate Jump: Implemented
   Generate JumpIfTrue: Implemented
+  Generate JumpIfFalse: Implemented
 
   Generate Add: Implemented
   Generate Subtract: Implemented
@@ -146,6 +147,8 @@ function CBackend:GeneratePopContext(State, Ir)
     } else {
       Return();
     }
+
+    break;
 ]]
   )
 end
@@ -655,6 +658,24 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
   )
 end
 
+function CBackend:GenerateJumpIfFalse(State, Ir)
+  CBackend:PutFormatted(
+    State,
+    [[
+    ValueType *ValueRegister = GetRegister(%d);
+
+    if (ValueRegister->Type == RuaNil ||
+        (ValueRegister->Type == RuaBoolean &&
+          !ValueRegister->Value.Boolean)) {
+      Jump(%d);
+      break;
+    }
+]],
+    Ir[2],
+    Ir[3]
+  )
+end
+
 function CBackend:GenerateChangeFile(State, Ir)
   CBackend:PutFormatted(
     State,
@@ -714,6 +735,7 @@ function CBackend:Generate(State, Ir)
     Not = CBackend.GenerateNot,
     Jump = CBackend.GenerateJump,
     JumpIfTrue = CBackend.GenerateJumpIfTrue,
+    JumpIfFalse = CBackend.GenerateJumpIfFalse,
     File = CBackend.GenerateChangeFile,
     Row = CBackend.GenerateChangeRow,
   }
@@ -835,8 +857,7 @@ function CBackend:Compile(State, FileName, OutputFile, Arguments)
       [[
 int main(int Argc, char *Argv[]) {
   return RuaDefaultEntryPoint(Argc, Argv);
-}
-    ]]
+}]]
     )
   end
 

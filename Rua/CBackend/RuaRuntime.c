@@ -19,7 +19,7 @@ int Row = 1;
   do {                                                                         \
     fflush(stdout);                                                            \
     fprintf(stderr,                                                            \
-            "\x1b[38;2;255;100;100mRua:\x1b[0m %s:%%d: "                       \
+            "\x1b[38;2;255;100;100mRua:\x1b[0m %s:%d: "                        \
             "\x1b[31mError:\x1b[0m ",                                          \
             FileName, Row);                                                    \
     fprintf(stderr, __VA_ARGS__);                                              \
@@ -88,7 +88,7 @@ typedef struct {
 
 uint32_t Pc = 1;
 bool Running = true;
-bool PcChanged = false;
+bool PcChanged = true;
 
 ContextType *CurrentContext = NULL;
 
@@ -112,18 +112,13 @@ static ContextType *CreateContext(void) {
 }
 
 static void NewContext(void) {
-  if (CallStackSize > 0) {
-    Crash("0x%x: NewContext: Cannot replace a context during a function call",
-          Pc);
-  }
-
   free(CurrentContext);
   CurrentContext = CreateContext();
 }
 
 static ValueType *GetRegister(int Register) {
   if (!CurrentContext || Register < 0 || Register >= REGISTER_CAPACITY) {
-    Crash("0x%x: GetRegister: Invalid register access (Register %%d)", Pc,
+    Crash("0x%x: GetRegister: Invalid register access (Register %d)", Pc,
           Register);
   }
 
@@ -148,7 +143,7 @@ static void Push(ValueType *Register) {
   }
 
   if (StackSize >= STACK_CAPACITY) {
-    Crash("0x%x: Push: Stack overflow (Capacity %%d)", Pc, STACK_CAPACITY);
+    Crash("0x%x: Push: Stack overflow (Capacity %d)", Pc, STACK_CAPACITY);
   }
 
   Stack[StackSize++] = *Register;
@@ -364,7 +359,7 @@ static void Jump(uint32_t TargetPc) {
 
   CurrentContext = Context;
 
-  Pc = TargetPc;
+  Pc = TargetPc - 1;
   PcChanged = true;
 }
 
@@ -500,13 +495,13 @@ int RuaDefaultEntryPoint(int Argc, char *Argv[]) {
 #endif
 
   while (Running) {
-    PcChanged = false;
-
-    RuaExecuteIr();
-
     if (Running && !PcChanged) {
       Pc++;
     }
+
+    RuaExecuteIr();
+
+    PcChanged = false;
   }
 
   while (CallStackSize > 0) {

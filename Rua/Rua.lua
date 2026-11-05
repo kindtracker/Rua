@@ -2339,6 +2339,7 @@ end
 
 function IrGenerator:GenerateIf(State, Ast, Data)
   local BodyLabel = IrGenerator:NewLabel(State)
+  local ElseBodyLabel = IrGenerator:NewLabel(State)
   local ConditionRegister = IrGenerator:Generate(State, Ast.Condition, Data)
 
   IrGenerator.Ir = {
@@ -2347,9 +2348,21 @@ function IrGenerator:GenerateIf(State, Ast, Data)
     [3] = BodyLabel,
   }
   IrGenerator:NewIr(State)
-  IrGenerator:MarkNotUsed(State, ConditionRegister)
-
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
+
+  if Ast.Else then
+    IrGenerator.Ir = {
+      [1] = "JumpIfFalse",
+      [2] = ConditionRegister,
+      [3] = ElseBodyLabel,
+    }
+    IrGenerator:NewIr(State)
+    IrGenerator:GenerateBody(State, Ast.Else, ElseBodyLabel)
+  elseif Ast.ElseIf then
+    IrGenerator:Generate(State, Ast.ElseIf)
+  end
+
+  IrGenerator:MarkNotUsed(State, ConditionRegister)
 end
 
 function IrGenerator:GenerateTable(State, Ast, Data)
@@ -2549,7 +2562,7 @@ function IrGenerator:ResolveLabels(State, IrProgram)
       if not LabelAddress then
         Logger:Error(State, "InternalError", "Couldn't resolve label %s", tostring(Ir[#Ir]))
       else
-        Ir[#Ir] = LabelAddress - 1
+        Ir[#Ir] = LabelAddress
       end
     end
   end
