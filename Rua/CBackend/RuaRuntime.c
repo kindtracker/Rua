@@ -12,7 +12,7 @@
 #define CALLSTACK_CAPACITY 256
 #define GLOBAL_CAPACITY 256
 
-char *FileName = "Meow";
+char *FileName = "<Anonymous>";
 int Row = 1;
 
 #define Crash(...)                                                             \

@@ -351,7 +351,7 @@ function CBackend:GenerateCallFunction(State, Ir)
 
     if (Register->Type != RuaFunction ||
         !Register->Value.Function) {
-      Crash("0x%%%%x: CallFunction: Attempt to call a non-function value (Register %%d)", Pc, %d);
+      Crash("0x%%%%x: CallFunction: Attempt to call a non-function value (Register %d)", Pc);
     }
 
     FunctionType *Function = Register->Value.Function;
