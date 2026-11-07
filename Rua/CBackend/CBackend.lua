@@ -578,6 +578,7 @@ local function GenerateComparison(State, Ir, Name, Operator)
     Ir[3],
     Ir[4],
     Name,
+    Name,
     Operator
   )
 end

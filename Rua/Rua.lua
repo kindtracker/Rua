@@ -1546,14 +1546,19 @@ function AstDesugar:DesugarFor(State, Ast, Table)
 
   table.insert(Ast.Body, {
     Kind = "VariableAssign",
-    Name = Ast.Name,
+    Name = {
+      Ast.Name,
+    },
+    Local = true,
     Value = {
-      Kind = "Binary",
-      Operator = "+",
-      Left = Ast.Name,
-      Right = {
-        Kind = "Number",
-        Value = 1,
+      {
+        Kind = "Binary",
+        Operator = "+",
+        Left = Ast.Name,
+        Right = {
+          Kind = "Number",
+          Value = 1,
+        },
       },
     },
   })
@@ -1561,15 +1566,19 @@ function AstDesugar:DesugarFor(State, Ast, Table)
   table.insert(Table, {
     Kind = "VariableAssign",
     Local = true,
-    Name = Ast.Name,
-    Value = Ast.Start,
+    Name = {
+      Ast.Name,
+    },
+    Value = {
+      Ast.Start,
+    },
   })
 
   table.insert(Table, {
     Kind = "While",
     Condition = {
       Kind = "Binary",
-      Operator = State.Step > 0 and "<=" or ">=",
+      Operator = Ast.Step > 0 and "<=" or ">=",
       Left = Ast.Name,
       Right = Ast.Limit,
     },
@@ -1585,7 +1594,9 @@ function AstDesugar:DesugarRepeat(State, Ast, Table)
 
   table.insert(Ast.Body, {
     Kind = "VariableAssign",
-    Name = FirstIterationName,
+    Name = {
+      FirstIterationName,
+    },
     Value = {
       Kind = "Boolean",
       Value = false,
@@ -1594,10 +1605,14 @@ function AstDesugar:DesugarRepeat(State, Ast, Table)
 
   table.insert(Table, {
     Kind = "VariableAssign",
-    Name = FirstIterationName,
+    Name = {
+      FirstIterationName,
+    },
     Value = {
-      Kind = "Boolean",
-      Value = true,
+      {
+        Kind = "Boolean",
+        Value = true,
+      },
     },
   })
 
@@ -1652,10 +1667,10 @@ function AstDesugar:DesugarFunction(State, Ast, Table)
     Kind = "VariableAssign",
     Local = Ast.Local,
     Name = {
-      [1] = Ast.Name,
+      Ast.Name,
     },
     Value = {
-      [1] = Function,
+      Function,
     },
   })
 end
@@ -2278,7 +2293,7 @@ function IrGenerator:GenerateWhile(State, Ast, Data)
   }
   IrGenerator:NewIr(State)
 
-  IrGenerator:PopContext(Stat)
+  IrGenerator:PopContext(State)
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel, {
     {
       "Jump",
