@@ -2580,7 +2580,7 @@ end
 
 function IrGenerator:ResolveLabels(State, IrProgram)
   for _, Ir in ipairs(IrProgram) do
-    if Ir[1]:find("Jump") or Ir[1] == "Function" then
+    if Ir[1]:find("Jump") or Ir[1] == "NewFunction" then
       local LabelAddress = IrGenerator.Labels[Ir[#Ir]]
 
       if not LabelAddress then
