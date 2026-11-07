@@ -1911,6 +1911,8 @@ function IrGenerator:NewLabel(State)
 end
 
 function IrGenerator:PushContext(State, GenerateNewContext)
+  local Parent = IrGenerator.Contexts[#IrGenerator.Contexts]
+
   local Context = {
     Registers = {},
     IrProgram = {},
@@ -1918,7 +1920,7 @@ function IrGenerator:PushContext(State, GenerateNewContext)
   }
 
   for Idx = 1, 256 do
-    Context.Registers[Idx] = false
+    Context.Registers[Idx] = Parent and Parent.Registers[Idx] or false
   end
 
   IrGenerator.Registers = Context.Registers
@@ -1973,11 +1975,13 @@ function IrGenerator:AllocateRegister(State)
 end
 
 function IrGenerator:MarkNotUsed(State, Register)
-  local CurrentContext = IrGenerator.Contexts[#IrGenerator.Contexts]
+  for Idx = #IrGenerator.Contexts, 1, -1 do
+    local Scope = IrGenerator.Contexts[Idx].Locals
 
-  for _, VariableRegister in pairs(CurrentContext.Locals) do
-    if VariableRegister == Register then
-      return
+    for _, VariableRegister in pairs(Scope) do
+      if VariableRegister == Register then
+        return
+      end
     end
   end
 
@@ -2721,7 +2725,7 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
   -- PrintTable(State.Tokens)
 
   Rua:Parse(State)
-  --  PrintTable(State.Ast)
+  -- PrintTable(State.Ast)
 
   Rua:Desugar(State)
   -- PrintTable(State.Ast)
