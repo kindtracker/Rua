@@ -2132,9 +2132,9 @@ function IrGenerator:GenerateVariableAssign(State, Ast, Data)
       IrGenerator:MarkNotUsed(State, TableRegister)
       IrGenerator:MarkNotUsed(State, KeyRegister)
     else
-      local VariableRegister = IrGenerator:Generate(State, Name, Ast.Local)
-
       if Ast.Local then
+        local VariableRegister = IrGenerator:Generate(State, Name, Ast.Local)
+
         if not VariableRegister then
           VariableRegister = IrGenerator:AllocateRegister(State)
         end
@@ -2146,17 +2146,20 @@ function IrGenerator:GenerateVariableAssign(State, Ast, Data)
           [3] = VariableRegister,
         }
         IrGenerator:NewIr(State)
+        IrGenerator:MarkNotUsed(State, VariableRegister)
       else
+        local NameRegister = IrGenerator:Generate(State, Name.Name, Ast.Local)
+
         IrGenerator.Ir = {
           [1] = "SetGlobal",
-          [2] = VariableRegister,
+          [2] = NameRegister,
           [3] = ValueRegister,
         }
         IrGenerator:NewIr(State)
+        IrGenerator:MarkNotUsed(State, NameRegister)
       end
 
       IrGenerator:MarkNotUsed(State, ValueRegister)
-      IrGenerator:MarkNotUsed(State, VariableRegister)
     end
   end
 
