@@ -2134,24 +2134,28 @@ function IrGenerator:GenerateVariableAssign(State, Ast, Data)
     else
       local VariableRegister = IrGenerator:Generate(State, Name, Ast.Local)
 
-      if not VariableRegister then
-        VariableRegister = IrGenerator:AllocateRegister(State)
-      end
-
       if Ast.Local then
-        IrGenerator:AddLocalVariableRegister(State, Name, VariableRegister)
-      end
+        if not VariableRegister then
+          VariableRegister = IrGenerator:AllocateRegister(State)
+        end
 
-      if ValueRegister then
+        IrGenerator:AddLocalVariableRegister(State, Name, VariableRegister)
         IrGenerator.Ir = {
           [1] = "Copy",
           [2] = ValueRegister,
           [3] = VariableRegister,
         }
         IrGenerator:NewIr(State)
-        IrGenerator:MarkNotUsed(State, ValueRegister)
+      else
+        IrGenerator.Ir = {
+          [1] = "SetGlobal",
+          [2] = VariableRegister,
+          [3] = ValueRegister,
+        }
+        IrGenerator:NewIr(State)
       end
 
+      IrGenerator:MarkNotUsed(State, ValueRegister)
       IrGenerator:MarkNotUsed(State, VariableRegister)
     end
   end
