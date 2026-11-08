@@ -2001,7 +2001,7 @@ function IrGenerator:GetCurrentScope(State)
 end
 
 function IrGenerator:GenerateBody(State, Ast, Label, ExtraCode, ExtraStartCode)
-  IrGenerator:PushContext(State)
+  IrGenerator:PushContext(State, true)
 
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
   Context.Label = Label
@@ -2198,7 +2198,7 @@ function IrGenerator:GenerateFunction(State, Ast, Data)
   }
   IrGenerator:NewIr(State)
 
-  IrGenerator:PushContext(State)
+  IrGenerator:PushContext(State, true)
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
   Context.Label = BodyLabel
 
@@ -2275,7 +2275,7 @@ function IrGenerator:GenerateWhile(State, Ast, Data)
   }
   IrGenerator:NewIr(State)
 
-  IrGenerator:PushContext(State)
+  IrGenerator:PushContext(State, true)
 
   local Context = IrGenerator.Contexts[#IrGenerator.Contexts]
   Context.Label = ConditionLabel

@@ -74,6 +74,7 @@ struct FunctionType {
 
 struct ContextType {
   ValueType Registers[REGISTER_CAPACITY];
+  ContextType *PreviousContext;
 };
 
 typedef struct {
@@ -112,14 +113,33 @@ static ContextType *CreateContext(void) {
 }
 
 static void NewContext(void) {
-  free(CurrentContext);
-  CurrentContext = CreateContext();
+  ContextType *Context = CreateContext();
+
+  Context->PreviousContext = CurrentContext;
+  CurrentContext = Context;
 }
 
 static ValueType *GetRegister(int Register) {
   if (!CurrentContext || Register < 0 || Register >= REGISTER_CAPACITY) {
-    Crash("0x%x: GetRegister: Invalid register access (Register %d)", Pc,
-          Register);
+    Crash("0x%x: GetRegister: Invalid register access", Pc);
+  }
+
+  return &CurrentContext->Registers[Register];
+}
+
+static ValueType *GetRegisterUpvalue(int Register) {
+  if (!CurrentContext || Register < 0 || Register >= REGISTER_CAPACITY) {
+    Crash("0x%x: GetRegisterUpvalue: Invalid register access", Pc);
+  }
+
+  ContextType *Context = CurrentContext->PreviousContext;
+  while (Context) {
+    ValueType *Value = &Context->Registers[Register];
+    if (Value->Type != RuaNil) {
+      return Value;
+    }
+
+    Context = Context->PreviousContext;
   }
 
   return &CurrentContext->Registers[Register];
@@ -351,9 +371,11 @@ static void Jump(uint32_t TargetPc) {
   }
 
   ContextType *Context = CreateContext();
+  Context->PreviousContext = CurrentContext;
   CallFrameType *Frame = &CallStack[CallStackSize++];
   Frame->PreviousContext = CurrentContext;
   Frame->ReturnAddress = Pc + 1;
+
   CurrentContext = Context;
 
   Pc = TargetPc;

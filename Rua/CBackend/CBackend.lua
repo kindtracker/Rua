@@ -157,7 +157,7 @@ function CBackend:GenerateCopy(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *SourceRegister = GetRegister(%d);
+    ValueType *SourceRegister = GetRegisterUpvalue(%d);
     ValueType *DestinationRegister = GetRegister(%d);
 
     *DestinationRegister = *SourceRegister;
@@ -208,7 +208,7 @@ function CBackend:GeneratePush(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    Push(GetRegister(%d));
+    Push(GetRegisterUpvalue(%d));
 ]],
     Ir[2]
   )
@@ -237,7 +237,7 @@ function CBackend:GenerateGetGlobal(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Name = GetRegister(%d);
+    ValueType *Name = GetRegisterUpvalue(%d);
     ValueType *Result = GetRegister(%d);
 
     if (Name->Type != RuaString) {
@@ -273,8 +273,8 @@ function CBackend:GenerateTablePush(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *TableRegister = GetRegister(%d);
-    ValueType *ValueRegister = GetRegister(%d);
+    ValueType *TableRegister = GetRegisterUpvalue(%d);
+    ValueType *ValueRegister = GetRegisterUpvalue(%d);
 
     if (TableRegister->Type != RuaTable) {
       Crash("0x%%%%x: TablePush: Expected a table", Pc);
@@ -300,8 +300,8 @@ function CBackend:GenerateIndex(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *TableRegister = GetRegister(%d);
-    ValueType *KeyRegister = GetRegister(%d);
+    ValueType *TableRegister = GetRegisterUpvalue(%d);
+    ValueType *KeyRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     if (TableRegister->Type != RuaTable) {
@@ -323,9 +323,9 @@ function CBackend:GenerateNewIndex(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *TableRegister = GetRegister(%d);
-    ValueType *KeyRegister = GetRegister(%d);
-    ValueType *ValueRegister = GetRegister(%d);
+    ValueType *TableRegister = GetRegisterUpvalue(%d);
+    ValueType *KeyRegister = GetRegisterUpvalue(%d);
+    ValueType *ValueRegister = GetRegisterUp(%d);
 
     if (TableRegister->Type != RuaTable) {
       Crash("0x%%%%x: TableNewIndex: Attempt to newindex a non-table", Pc);
@@ -347,7 +347,7 @@ function CBackend:GenerateCallFunction(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *Register = GetRegister(%d);
+    ValueType *Register = GetRegisterUpvalue(%d);
 
     if (Register->Type != RuaFunction ||
         !Register->Value.Function) {
@@ -381,8 +381,8 @@ local function GenerateNumericBinary(State, Ir, Name, Expression)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
+    ValueType *LeftRegister = GetRegisterUpvalue(%d);
+    ValueType *RightRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     if (LeftRegister->Type != RuaNumber ||
@@ -421,8 +421,8 @@ function CBackend:GenerateModulo(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
+    ValueType *LeftRegister = GetRegisterUpvalue(%d);
+    ValueType *RightRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     if (LeftRegister->Type != RuaNumber ||
@@ -461,7 +461,7 @@ function CBackend:GenerateNegate(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *OperandRegister = GetRegister(%d);
+    ValueType *OperandRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     if (OperandRegister->Type != RuaNumber) {
@@ -499,8 +499,8 @@ function CBackend:GenerateAnd(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
+    ValueType *LeftRegister = GetRegisterUpvalue(%d);
+    ValueType *RightRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     if (LeftRegister->Type == RuaNil ||
@@ -521,8 +521,8 @@ function CBackend:GenerateOr(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
+    ValueType *LeftRegister = GetRegisterUpvalue(%d);
+    ValueType *RightRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     if (LeftRegister->Type == RuaNil ||
@@ -543,8 +543,8 @@ local function GenerateComparison(State, Ir, Name, Operator)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
+    ValueType *LeftRegister = GetRegisterUpvalue(%d);
+    ValueType *RightRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     int Comparison = 0;
@@ -587,8 +587,8 @@ local function GenerateEquality(State, Ir, Negate)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *LeftRegister = GetRegister(%d);
-    ValueType *RightRegister = GetRegister(%d);
+    ValueType *LeftRegister = GetRegisterUpvalue(%d);
+    ValueType *RightRegister = GetRegisterUpvalue(%d);
     ValueType *ResultRegister = GetRegister(%d);
 
     bool Equal = ValuesEqual(
@@ -645,7 +645,7 @@ function CBackend:GenerateJumpIfTrue(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *ValueRegister = GetRegister(%d);
+    ValueType *ValueRegister = GetRegisterUpvalue(%d);
 
     if (ValueRegister->Type != RuaNil &&
         !(ValueRegister->Type == RuaBoolean &&
@@ -663,7 +663,7 @@ function CBackend:GenerateJumpIfFalse(State, Ir)
   CBackend:PutFormatted(
     State,
     [[
-    ValueType *ValueRegister = GetRegister(%d);
+    ValueType *ValueRegister = GetRegisterUpvalue(%d);
 
     if (ValueRegister->Type == RuaNil ||
         (ValueRegister->Type == RuaBoolean &&
