@@ -9,7 +9,7 @@
 
 #define REGISTER_CAPACITY 256
 #define STACK_CAPACITY 256
-#define CALLSTACK_CAPACITY 256
+#define CALLSTACK_CAPACITY 4096
 #define GLOBAL_CAPACITY 256
 
 char *FileName = "<Anonymous>";
