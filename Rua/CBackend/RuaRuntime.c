@@ -132,7 +132,7 @@ static ValueType *GetRegisterUpvalue(int Register) {
     Crash("0x%x: GetRegisterUpvalue: Invalid register access", Pc);
   }
 
-  ContextType *Context = CurrentContext->PreviousContext;
+  ContextType *Context = CurrentContext;
   while (Context) {
     ValueType *Value = &Context->Registers[Register];
     if (Value->Type != RuaNil) {
