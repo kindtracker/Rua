@@ -87,6 +87,19 @@ typedef struct {
   uint32_t ReturnAddress;
 } CallFrameType;
 
+typedef struct {
+  const char *Key;
+  ValueType Value;
+  uint64_t Hash;
+  bool Used;
+} HashTableEntry;
+
+typedef struct {
+  size_t Capacity;
+  size_t Count;
+  HashTableEntry *Array;
+} HashTable;
+
 uint32_t Pc = 1;
 bool Running = true;
 bool PcChanged = true;
@@ -99,8 +112,7 @@ int StackSize = 0;
 CallFrameType CallStack[CALLSTACK_CAPACITY];
 int CallStackSize = 0;
 
-GlobalType Globals[GLOBAL_CAPACITY];
-size_t GlobalCount = 0;
+HashTable *Globals;
 
 static ContextType *CreateContext(void) {
   ContextType *Context = calloc(1, sizeof(ContextType));
@@ -177,10 +189,7 @@ static ValueType Pop(void) {
   return Stack[--StackSize];
 }
 
-static void ClearStack(void) {
-  memset(Stack, 0, sizeof(Stack));
-  StackSize = 0;
-}
+static void ClearStack(void) { StackSize = 0; }
 
 static TableType *NewTable(size_t Capacity) {
   TableType *Table = calloc(1, sizeof(TableType));
@@ -322,29 +331,102 @@ static void TableNewIndex(TableType *Table, ValueType Key, ValueType Value) {
   }
 }
 
+static uint64_t HashString(const char *String) {
+  uint64_t Hash = 14695981039346656037ULL;
+
+  while (*String) {
+    Hash ^= (unsigned char)*String++;
+    Hash *= 1099511628211ULL;
+  }
+
+  return Hash;
+}
+
+static HashTableEntry *HashTableFind(HashTable *Table, const char *Key,
+                                     uint64_t Hash) {
+  size_t Index = Hash % Table->Capacity;
+
+  for (size_t Idx = 0; Idx < Table->Capacity; Idx++) {
+    HashTableEntry *Entry = &Table->Array[Index];
+
+    if (!Entry->Used) {
+      return NULL;
+    }
+
+    if (Entry->Hash == Hash && strcmp(Entry->Key, Key) == 0) {
+      return Entry;
+    }
+
+    Index = (Index + 1) % Table->Capacity;
+  }
+
+  return NULL;
+}
+
+static ValueType HashTableIndex(HashTable *Table, const char *Key) {
+  uint64_t Hash = HashString(Key);
+  HashTableEntry *Entry = HashTableFind(Table, Key, Hash);
+  return Entry ? Entry->Value : CreateNil();
+}
+
+static void HashTableNewIndex(HashTable *Table, const char *Key,
+                              ValueType Value) {
+  uint64_t Hash = HashString(Key);
+  HashTableEntry *Entry = HashTableFind(Table, Key, Hash);
+  if (Entry) {
+    Entry->Value = Value;
+    return;
+  }
+
+  if (Table->Count >= Table->Capacity) {
+    Crash("HashTableNewIndex: Hash table overflow");
+  }
+
+  size_t Index = Hash % Table->Capacity;
+
+  while (Table->Array[Index].Used) {
+    Index = (Index + 1) % Table->Capacity;
+  }
+
+  Table->Array[Index] = (HashTableEntry){
+      .Key = Key,
+      .Value = Value,
+      .Hash = Hash,
+      .Used = true,
+  };
+
+  Table->Count++;
+}
+
+static HashTable *HashTableNew(size_t Capacity) {
+  if (Capacity == 0) {
+    Capacity = 256;
+  }
+
+  HashTable *Table = calloc(1, sizeof(HashTable));
+
+  if (!Table) {
+    Crash("HashTableNew: Failed to allocate hash table");
+  }
+
+  Table->Array = calloc(Capacity, sizeof(HashTableEntry));
+
+  if (!Table->Array) {
+    free(Table);
+    Crash("HashTableNew: Failed to allocate entries");
+  }
+
+  Table->Capacity = Capacity;
+
+  return Table;
+}
+
 static void SetGlobal(const char *Name, ValueType Value) {
   if (!Name) {
     Crash("0x%x: SetGlobal: Attempt to use a NULL global name", Pc);
   }
 
-  for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
-    if (strcmp(Globals[Idx].Name, Name) == 0) {
-      Globals[Idx].Value = Value;
-      return;
-    }
-  }
-
-  if (Value.Type == RuaNil) {
-    return;
-  }
-
-  if (GlobalCount >= GLOBAL_CAPACITY) {
-    Crash("0x%x: SetGlobal: Global table overflow", Pc);
-  }
-
-  Globals[GlobalCount].Name = Name;
-  Globals[GlobalCount].Value = Value;
-  GlobalCount++;
+  HashTableNewIndex(Globals, Name, Value);
 }
 
 static ValueType GetGlobal(const char *Name) {
@@ -352,13 +434,7 @@ static ValueType GetGlobal(const char *Name) {
     Crash("0x%x: GetGlobal: Attempt to use a NULL global name", Pc);
   }
 
-  for (size_t Idx = 0; Idx < GlobalCount; Idx++) {
-    if (strcmp(Globals[Idx].Name, Name) == 0) {
-      return Globals[Idx].Value;
-    }
-  }
-
-  return CreateNil();
+  return HashTableIndex(Globals, Name);
 }
 
 static void Jump(uint32_t TargetPc) {
@@ -397,7 +473,6 @@ static void Return(void) {
 
   PcChanged = true;
 }
-
 void RuaPushNil(void) {
   ValueType Result = CreateNil();
   Push(&Result);
@@ -506,6 +581,8 @@ static void LuaRuntimeInitialize(void) {
 int RuaDefaultEntryPoint(int Argc, char *Argv[]) {
   (void)Argc;
   (void)Argv;
+
+  Globals = HashTableNew(0);
 
   LuaRuntimeInitialize();
 
