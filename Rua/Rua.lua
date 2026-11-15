@@ -2501,7 +2501,7 @@ function IrGenerator:GenerateBreak(State, Ast, Data)
   IrGenerator:NewIr(State)
 end
 
-function IrGenerator:GenerateChangeRow(State, Ast)
+function IrGenerator:GenerateChangeRow(State, Ast, Data)
   if Ast.Row then
     IrGenerator.Ir = {
       [1] = "Row",
@@ -2509,6 +2509,10 @@ function IrGenerator:GenerateChangeRow(State, Ast)
     }
     IrGenerator:NewIr(State)
   end
+end
+
+function IrGenerator:GenerateGroup(State, Ast, Data)
+  return IrGenerator:Generate(Ast.Expression)
 end
 
 function IrGenerator:Generate(State, Ast, Data)
@@ -2573,6 +2577,9 @@ function IrGenerator:Generate(State, Ast, Data)
     return ResultRegister
   elseif Ast.Kind == "Break" then
     local ResultRegister = IrGenerator:GenerateBreak(State, Ast, Data)
+    return ResultRegister
+  elseif Ast.Kind == "Group" then
+    local ResultRegister = IrGenerator:GenerateGroup(State, Ast, Data)
     return ResultRegister
   else
     Logger:Error(

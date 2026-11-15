@@ -10,6 +10,7 @@
 #define REGISTER_CAPACITY 256
 #define STACK_CAPACITY 256
 #define CALLSTACK_CAPACITY 4096
+#define CONTEXT_POOL_CAPACITY (CALLSTACK_CAPACITY + 1)
 #define GLOBAL_CAPACITY 256
 
 char *FileName = "<Anonymous>";
@@ -75,6 +76,7 @@ struct FunctionType {
 struct ContextType {
   ValueType Registers[REGISTER_CAPACITY];
   ContextType *PreviousContext;
+  ContextType *NextFree;
 };
 
 typedef struct {
@@ -100,35 +102,109 @@ typedef struct {
   HashTableEntry *Array;
 } HashTable;
 
+typedef struct {
+  unsigned char *Memory;
+  size_t Capacity;
+  size_t Offset;
+} ArenaType;
+
 uint32_t Pc = 1;
 bool Running = true;
 bool PcChanged = true;
 
-ContextType *CurrentContext = NULL;
+ContextType *FreeContexts = NULL;
 
+HashTable *Globals;
+ArenaType *ContextArena;
+ContextType *CurrentContext = NULL;
 ValueType Stack[STACK_CAPACITY];
 int StackSize = 0;
-
 CallFrameType CallStack[CALLSTACK_CAPACITY];
 int CallStackSize = 0;
 
-HashTable *Globals;
+static ArenaType *ArenaNew(size_t Capacity) {
+  ArenaType *Arena = calloc(1, sizeof(ArenaType));
 
-static ContextType *CreateContext(void) {
-  ContextType *Context = calloc(1, sizeof(ContextType));
-
-  if (!Context) {
-    Crash("0x%x: CreateContext: Failed to allocate context", Pc);
+  if (!Arena) {
+    Crash("ArenaNew: Failed to allocate arena");
   }
 
+  Arena->Memory = malloc(Capacity);
+  Arena->Capacity = Capacity;
+  Arena->Offset = 0;
+  return Arena;
+}
+
+static inline size_t NextPowerOfTwo(size_t Value) {
+#if SIZE_MAX == UINT64_MAX
+  return (size_t)1 << (64 - __builtin_clzll(Value - 1));
+#elif SIZE_MAX == UINT32_MAX
+  return (size_t)1 << (32 - __builtin_clz(Value - 1));
+#endif
+}
+
+static void *ArenaAlloc(ArenaType *Arena, size_t Size) {
+  if (Size > Arena->Capacity - Arena->Offset) {
+    size_t Required = Arena->Offset + Size;
+    size_t NewCapacity = NextPowerOfTwo(Required);
+
+    void *NewMemory = realloc(Arena->Memory, NewCapacity);
+    if (!NewMemory) {
+      Crash("ArenaAlloc: Failed to reallocate arena (%sz -> %sz)",
+            Arena->Capacity, NewMemory);
+    }
+    Arena->Memory = NewMemory;
+    Arena->Capacity = NewCapacity;
+  }
+
+  void *Result = Arena->Memory + Arena->Offset;
+  Arena->Offset += Size;
+
+  return Result;
+}
+
+static void ArenaFree(ArenaType *Arena) {
+  free(Arena->Memory);
+  Arena->Memory = NULL;
+  Arena->Capacity = 0;
+  Arena->Offset = 0;
+}
+
+static void ContextPoolInit(void) {
+  ContextArena = ArenaNew(sizeof(ContextType) * CONTEXT_POOL_CAPACITY);
+
+  for (size_t i = 0; i < CONTEXT_POOL_CAPACITY; i++) {
+    ContextType *Context = ArenaAlloc(ContextArena, sizeof(ContextType));
+
+    Context->NextFree = FreeContexts;
+    FreeContexts = Context;
+  }
+}
+
+static ContextType *CreateContext(void) {
+  if (!FreeContexts) {
+    Crash("CreateContext: Context pool exhausted");
+  }
+
+  ContextType *Context = FreeContexts;
+  FreeContexts = Context->NextFree;
+
+  memset(Context, 0, sizeof(ContextType));
   return Context;
 }
 
 static void NewContext(void) {
   ContextType *Context = CreateContext();
-
   Context->PreviousContext = CurrentContext;
   CurrentContext = Context;
+}
+
+static void ContextFree(ContextType *Context) {
+  if (!Context)
+    return;
+  Context->PreviousContext = NULL;
+  Context->NextFree = FreeContexts;
+  FreeContexts = Context;
 }
 
 static ValueType *GetRegister(int Register) {
@@ -465,14 +541,12 @@ static void Return(void) {
   }
 
   CallFrameType Frame = CallStack[--CallStackSize];
-
-  free(CurrentContext);
-
+  ContextFree(CurrentContext);
   CurrentContext = Frame.PreviousContext;
   Pc = Frame.ReturnAddress;
-
   PcChanged = true;
 }
+
 void RuaPushNil(void) {
   ValueType Result = CreateNil();
   Push(&Result);
@@ -582,6 +656,7 @@ int RuaDefaultEntryPoint(int Argc, char *Argv[]) {
   (void)Argc;
   (void)Argv;
 
+  ContextPoolInit();
   Globals = HashTableNew(0);
 
   LuaRuntimeInitialize();
@@ -606,9 +681,6 @@ int RuaDefaultEntryPoint(int Argc, char *Argv[]) {
     CallFrameType Frame = CallStack[--CallStackSize];
     CurrentContext = Frame.PreviousContext;
   }
-
-  free(CurrentContext);
-  CurrentContext = NULL;
 
   return 0;
 }
