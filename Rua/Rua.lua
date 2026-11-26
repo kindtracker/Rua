@@ -1643,38 +1643,6 @@ function AstDesugar:DesugarDo(State, Ast, Table)
   })
 end
 
-function AstDesugar:DesugarFunction(State, Ast, Table)
-  local Arguments = {}
-
-  if Ast.Name.Separator == ":" then
-    table.insert(Arguments, {
-      Kind = "Identifier",
-      Name = "self",
-    })
-  end
-
-  for _, Argument in ipairs(Ast.Arguments) do
-    table.insert(Arguments, Argument)
-  end
-
-  local Function = {
-    Kind = "Function",
-    Arguments = Arguments,
-    Body = Ast.Body,
-  }
-
-  table.insert(Table, {
-    Kind = "VariableAssign",
-    Local = Ast.Local,
-    Name = {
-      Ast.Name,
-    },
-    Value = {
-      Function,
-    },
-  })
-end
-
 function AstDesugar:DesugarFunctionCall(State, Ast, Table)
   local Arguments = {}
 
@@ -1820,8 +1788,6 @@ function AstDesugar:Desugar(State, Ast)
     AstDesugar:DesugarRepeat(State, Ast, Table)
   elseif Ast.Kind == "Do" then
     AstDesugar:DesugarDo(State, Ast, Table)
-  elseif Ast.Kind == "Function" then
-    AstDesugar:DesugarFunction(State, Ast, Table)
   elseif Ast.Kind == "FunctionCall" and Ast.Name.Kind == "Member" then
     AstDesugar:DesugarFunctionCall(State, Ast, Table)
   elseif Ast.Kind == "If" then
