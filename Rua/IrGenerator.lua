@@ -218,6 +218,16 @@ function IrGenerator:GenerateFunctionCall(State, Ast)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast)
+  for Idx = #IrGenerator.Scopes, 1, -1 do
+    local Scope = IrGenerator.Scopes[Idx]
+
+    for Variable, Register in pairs(Scope) do
+      if Variable == Ast.Name then
+        return Register
+      end
+    end
+  end
+
   local Constant = IrGenerator:AddConstant(Ast.Name)
   local ResultRegister = IrGenerator:AllocateRegister(State)
   IrGenerator.Ir = {
@@ -322,19 +332,39 @@ end
 function IrGenerator:GenerateVariableDeclaration(State, Ast)
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
 
-  local VariableRegister = IrGenerator:AllocateRegister(State)
-  Scope[Ast.Name] = VariableRegister
+  for _, Variable in pairs(Ast.Name) do
+    local VariableRegister = IrGenerator:AllocateRegister(State)
+    Scope[Variable.Name] = VariableRegister
 
-  if Ast.Value then
-    local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+    if Ast.Value then
+      local ValueRegister = IrGenerator:Generate(State, Variable.Value)
+
+      IrGenerator.Ir = {
+        [1] = "Move",
+        [2] = ValueRegister,
+        [3] = Register,
+      }
+      IrGenerator:NewIr(State)
+      IrGenerator:MarkRegisterNotUsed(State, ValueRegister)
+    end
+  end
+end
+
+function IrGenerator:GenerateVariableAssign(State, Ast)
+  for Idx, Variable in pairs(Ast.Name) do
+    local Value = Ast.Value[((Idx - 1) % #Ast.Value) + 1]
+
+    local VariableRegister = IrGenerator:Generate(State, Variable)
+    local ValueRegister = IrGenerator:Generate(State, Value)
 
     IrGenerator.Ir = {
       [1] = "Move",
       [2] = ValueRegister,
-      [3] = Register,
+      [3] = VariableRegister,
     }
     IrGenerator:NewIr(State)
     IrGenerator:MarkRegisterNotUsed(State, ValueRegister)
+    IrGenerator:MarkRegisterNotUsed(State, VariableRegister)
   end
 end
 
@@ -353,6 +383,8 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateFunctionCall(State, Ast)
   elseif Ast.Kind == "VariableDeclaration" then
     return IrGenerator:GenerateVariableDeclaration(State, Ast)
+  elseif Ast.Kind == "VariableAssign" then
+    return IrGenerator:GenerateVariableAssign(State, Ast)
   elseif Ast.Kind == "Identifier" then
     return IrGenerator:GenerateIdentifier(State, Ast)
   elseif Ast.Kind == "String" then
@@ -394,8 +426,6 @@ function IrGenerator:GenerateIr(State)
     Ir = IrGenerator.Program,
     Constants = IrGenerator.Constants,
   }
-
-  Logger:PrintTable(State.Program)
 end
 
 function LuaIrGenerator:GenerateSymbol(Symbol)
