@@ -853,14 +853,13 @@ function Parser:ParseExpressionList(State)
   local Expression = Parser:ParseExpression(State)
 
   if not Expression then
-    return nil
+    return {}
   end
 
   table.insert(Expressions, Expression)
 
   while Parser:Match(State, ",") do
     local Expression = Parser:ParseExpression(State)
-
     if not Expression then
       return nil
     end
@@ -985,7 +984,7 @@ function Parser:ParseFunctionCall(State, Statement)
 end
 
 function Parser:ParseFunction(State, Statement)
-  Statement.Kind = "Function"
+  Statement.Kind = "FunctionDeclaration"
   Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser:ParseName(State)
 
@@ -1159,13 +1158,10 @@ function Parser:ParseStatement(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
     else
-      Logger:Error(
-        State,
-        "SyntaxError",
-        "Expected '(', '=', '.', or ',' after identifier but got '%s'",
-        Parser.Token and Parser.Token.Value or "<EOF>"
-      )
-      return
+      Parser:GoToStart(State)
+      Statement.Kind = "VariableDeclaration"
+      Statement.Name = Parser:ParseNameList(State)
+      return Statement
     end
   elseif Parser:CheckToken(State, {
     Kind = "Keyword",

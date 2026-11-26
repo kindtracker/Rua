@@ -58,6 +58,12 @@ local Isa = {
       { Name = "Result", Type = "Register" },
     },
   },
+  ["Move"] = {
+    Arguments = {
+      { Name = "Source", Type = "Register" },
+      { Name = "Destination", Type = "Register" },
+    },
+  },
 }
 
 local BinaryOperations = {
@@ -114,8 +120,9 @@ function IrGenerator:Reset(State)
   IrGenerator.Constants = {}
   IrGenerator.Pc = 0
   IrGenerator.Label = 0
-  IrGenerator.NextLabelId = 1
+  IrGenerator.NextSymbolId = 1
   IrGenerator.Registers = {}
+  IrGenerator.Scopes = {}
 
   for Idx = 1, 256 do
     IrGenerator.Registers[Idx] = false
@@ -157,10 +164,10 @@ function IrGenerator:MarkRegisterNotUsed(State, Register)
   IrGenerator.Registers[Register] = false
 end
 
-function IrGenerator:NewLabel(Name)
-  local LabeId = IrGenerator.NextLabelId
-  IrGenerator.NextLabelId = IrGenerator.NextLabelId + 1
-  return LabeId
+function IrGenerator:NewSymbol(State)
+  local SymbolId = IrGenerator.NextSymbolId
+  IrGenerator.NextSymbolId = IrGenerator.NextSymbolId + 1
+  return SymbolId
 end
 
 function IrGenerator:GenerateBody(State, Body, Label)
@@ -175,7 +182,7 @@ function IrGenerator:GenerateBody(State, Body, Label)
 end
 
 function IrGenerator:GenerateFunction(State, Ast)
-  local FunctionLabel = IrGenerator:NewLabel()
+  local FunctionLabel = IrGenerator:NewSymbol(State)
 
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
@@ -312,6 +319,25 @@ function IrGenerator:GenerateNumber(State, Ast)
   return ResultRegister
 end
 
+function IrGenerator:GenerateVariableDeclaration(State, Ast)
+  local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
+
+  local VariableRegister = IrGenerator:AllocateRegister(State)
+  Scope[Ast.Name] = VariableRegister
+
+  if Ast.Value then
+    local ValueRegister = IrGenerator:Generate(State, Ast.Value)
+
+    IrGenerator.Ir = {
+      [1] = "Move",
+      [2] = ValueRegister,
+      [3] = Register,
+    }
+    IrGenerator:NewIr(State)
+    IrGenerator:MarkRegisterNotUsed(State, ValueRegister)
+  end
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -321,10 +347,12 @@ function IrGenerator:Generate(State, Ast)
     IrGenerator:NewIr(State)
   end
 
-  if Ast.Kind == "Function" then
+  if Ast.Kind == "FunctionDeclaration" then
     return IrGenerator:GenerateFunction(State, Ast)
   elseif Ast.Kind == "FunctionCall" then
     return IrGenerator:GenerateFunctionCall(State, Ast)
+  elseif Ast.Kind == "VariableDeclaration" then
+    return IrGenerator:GenerateVariableDeclaration(State, Ast)
   elseif Ast.Kind == "Identifier" then
     return IrGenerator:GenerateIdentifier(State, Ast)
   elseif Ast.Kind == "String" then
@@ -352,6 +380,8 @@ function IrGenerator:GenerateIr(State)
   }
   IrGenerator:NewIr(State)
 
+  table.insert(IrGenerator.Scopes, {})
+
   for _, Ast in ipairs(State.Ast) do
     local ResultRegister = IrGenerator:Generate(State, Ast)
 
@@ -364,6 +394,8 @@ function IrGenerator:GenerateIr(State)
     Ir = IrGenerator.Program,
     Constants = IrGenerator.Constants,
   }
+
+  Logger:PrintTable(State.Program)
 end
 
 function LuaIrGenerator:GenerateSymbol(Symbol)
