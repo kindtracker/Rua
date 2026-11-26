@@ -22,7 +22,6 @@ local BaseKeywords = {
   "end",
   "for",
   "function",
-  "goto",
   "if",
   "in",
   "local",
@@ -1133,27 +1132,6 @@ function Parser:ParseRepeat(State, Statement)
   Statement.Condition = Condition
 end
 
-function Parser:ParseGoto(State, Statement)
-  Statement.Kind = "Goto"
-  Parser:Advance(State)
-  Parser:Expect(State, "Ident", nil)
-  Parser:Advance(State, -1)
-
-  local Label = Parser.Token.Value
-  Statement.Name = Label
-  Parser:Advance(State)
-end
-
-function Parser:ParseLabel(State, Statement)
-  Statement.Kind = "Label"
-  Parser:Expect(State, "Punct", "::")
-
-  local Label = Parser.Token.Value
-  Statement.Name = Label
-  Parser:Advance(State)
-  Parser:Expect(State, "Punct", "::")
-end
-
 function Parser:ParseStatement(State)
   local Statement = {}
   Parser.StartIndex = Parser.Index
@@ -1189,13 +1167,6 @@ function Parser:ParseStatement(State)
       )
       return
     end
-  elseif Parser:CheckToken(State, {
-    Kind = "Punct",
-    Value = "::",
-  }) then
-    Parser:GoToStart(State)
-    Parser:ParseLabel(State, Statement)
-    return Statement
   elseif Parser:CheckToken(State, {
     Kind = "Keyword",
   }) then
@@ -1240,10 +1211,6 @@ function Parser:ParseStatement(State)
     elseif Parser.Token.Value == "repeat" then
       Parser:GoToStart(State)
       Parser:ParseRepeat(State, Statement)
-      return Statement
-    elseif Parser.Token.Value == "goto" then
-      Parser:GoToStart(State)
-      Parser:ParseGoto(State, Statement)
       return Statement
     else
       Logger:Error(State, "SyntaxError", "Expected a statement but got '%s'", Parser.Token.Value)

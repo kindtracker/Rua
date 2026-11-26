@@ -1,3 +1,30 @@
+--[[
+IrGenerator:
+  Generate Function Call: Implemented
+  Generate Variable Assignment: Not Implemented
+  Generate Local Statement: Not Implemented
+  Generate Function Declaration: Partially Implemented
+  Generate Return: Not Implemented
+  Generate Break: Not Implemented
+  Generate Method Call: Not Implemented
+  Generate Numeric For: Not Implemented
+  Generate Generic For: Not Implemented
+  Generate If: Not Implemented
+  Generate While: Not Implemented
+  Generate Expression: Not Implemented
+  Generate Binary Expression: Not Implemented
+  Generate Unary Expression: Not Implemented
+  Generate Identifier: Not Implemented
+  Generate Number Literal: Not Implemented
+  Generate String Literal: Implemented
+  Generate Boolean Literal: Not Implemented
+  Generate Nil Literal: Not Implemented
+  Generate Table Constructor: Not Implemented
+  Generate Table Indexing: Not Implemented
+  Generate Member Access: Not Implemented
+  Generate Anonymous Function: Not Implemented
+]]
+
 local IrGenerator = {}
 local LuaIrGenerator = {}
 local Logger = _G.Logger
