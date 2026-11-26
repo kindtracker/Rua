@@ -1,4 +1,5 @@
 local IrGenerator = {}
+local LuaIrGenerator = {}
 local Logger = _G.Logger
 
 function IrGenerator:Reset(State)
@@ -132,68 +133,83 @@ function IrGenerator:GenerateIr(State)
   State.IrProgram = IrGenerator.Program
 end
 
-function IrGenerator:GenerateLuaIr(State)
-  State.LuaIr = ""
+function LuaIrGenerator:GenerateSymbol(Symbol)
+  if Symbol.Kind == "Identifier" then
+    return Symbol.Name
+  end
+end
 
-  local LastLabel = 0
+function LuaIrGenerator:GenerateArguments(Ir)
+  local Arguments = {}
+
+  for Idx = 2, #Ir do
+    local Argument = Ir[Idx]
+
+    if type(Argument) == "string" then
+      Arguments[#Arguments + 1] = string.format("%q", Argument)
+    else
+      Arguments[#Arguments + 1] = tostring(Argument)
+    end
+  end
+
+  return table.concat(Arguments, ", ")
+end
+
+function LuaIrGenerator:GenerateFunction(Symbols, Label)
+  local FunctionName = self:GenerateSymbol(Symbols[Label])
+
+  return string.format("function %s()", FunctionName)
+end
+
+function LuaIrGenerator:GenerateCommand(Ir, Indent)
+  local IndentString = ("  "):rep(Indent)
+  local Arguments = self:GenerateArguments(Ir)
+
+  return string.format("%s%s %s", IndentString, Ir[1]:lower(), Arguments)
+end
+
+function LuaIrGenerator:Generate(State)
+  local Output = {}
   local Symbols = {}
+  local LastLabel = 0
 
-  local function GenerateSymbol(Symbol)
-    if Symbol.Kind == "Identifier" then
-      return Symbol.Name
-    end
-  end
-
-  local function Generate(Ir, Indent)
-    if Ir[1] == "File" or Ir[1] == "Row" then
-      return
-    end
-
-    local Label = Ir[0]
-    if Label > LastLabel then
-      local FunctionName = GenerateSymbol(Symbols[Label])
-      local Text = string.format("function %s()", FunctionName)
-      State.LuaIr = State.LuaIr .. Text .. "\n"
-    end
-
-    local Arguments = {}
-    for Idx = 2, #Ir do
-      local Argument = Ir[Idx]
-      if type(Argument) == "string" then
-        Arguments[#Arguments + 1] = string.format("%q", Argument)
-      else
-        Arguments[#Arguments + 1] = tostring(Argument)
-      end
-    end
-
-    local IndentString = ("  "):rep(Indent)
-    local Text = string.format("%s%s(%s)", IndentString, Ir[1], table.concat(Arguments, ", "))
-    State.LuaIr = State.LuaIr .. Text .. "\n"
-
-    LastLabel = Label
-  end
-
-  for Idx, Ir in ipairs(State.IrProgram) do
+  for _, Ir in ipairs(State.IrProgram) do
     if Ir[1] == "FunctionDeclaration" then
-      local Label = Ir[2]
-      local Name = Ir[3]
-      Symbols[Label] = Name
-      table.remove(State.IrProgram, Idx)
+      Symbols[Ir[2]] = Ir[3]
     end
   end
 
   for _, Ir in ipairs(State.IrProgram) do
-    local Indent = 0
-    if Ir[0] ~= 0 then
-      Indent = 1
-    end
+    local Kind = Ir[1]
 
-    Generate(Ir, Indent)
+    if Kind ~= "File" and Kind ~= "Row" and Kind ~= "FunctionDeclaration" then
+      local Label = Ir[0]
+      if Label ~= LastLabel then
+        if LastLabel ~= 0 then
+          Output[#Output + 1] = "end"
+        end
+
+        if Label ~= 0 then
+          Output[#Output + 1] = self:GenerateFunction(Symbols, Label)
+        end
+
+        LastLabel = Label
+      end
+
+      local Indent = 0
+      if Label ~= 0 then
+        Indent = 1
+      end
+
+      Output[#Output + 1] = self:GenerateCommand(Ir, Indent)
+    end
   end
 
   if LastLabel ~= 0 then
-    State.LuaIr = State.LuaIr .. "end"
+    Output[#Output + 1] = "end"
   end
+
+  State.LuaIr = table.concat(Output, "\n")
 end
 
-return IrGenerator
+return { IrGenerator = IrGenerator, LuaIrGenerator = LuaIrGenerator }

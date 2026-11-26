@@ -1,4 +1,7 @@
-local IrGenerator = require("Rua.IrGenerator")
+local IrGenerators = require("Rua.IrGenerator")
+local IrGenerator = IrGenerators.IrGenerator
+local LuaIrGenerator = IrGenerators.LuaIrGenerator
+
 local Tokenizer = {}
 local Parser = {}
 local AstDesugar = {}
@@ -1550,4 +1553,5 @@ return {
   Parser = Parser,
   AstDesugar = AstDesugar,
   IrGenerator = IrGenerator,
+  LuaIrGenerator = LuaIrGenerator,
 }

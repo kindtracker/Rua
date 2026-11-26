@@ -204,6 +204,7 @@ local Tokenizer = FrontEnd.Tokenizer
 local Parser = FrontEnd.Parser
 local AstDesugar = FrontEnd.AstDesugar
 local IrGenerator = FrontEnd.IrGenerator
+local LuaIrGenerator = FrontEnd.LuaIrGenerator
 
 local function PrintTable(Value, Indent)
   Indent = Indent or 0
@@ -296,7 +297,7 @@ function Rua:GenerateIr(State)
 end
 
 function Rua:GenerateLuaIr(State)
-  IrGenerator:GenerateLuaIr(State)
+  LuaIrGenerator:Generate(State)
 end
 
 function Rua.new()
