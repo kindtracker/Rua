@@ -30,26 +30,252 @@ local LuaIrGenerator = {}
 local Logger = _G.Logger
 
 local Isa = {
+  ["Declaration.Function"] = {
+    Arguments = {
+      { Name = "Label", Type = "Label" },
+      { Name = "Name", Type = "Symbol" },
+    },
+  },
+
+  -- 0
   ["Push"] = {
     Arguments = {
       { Name = "Register", Type = "Register", Role = "Source" },
     },
   },
+
+  -- 1
   ["Call"] = {
     Arguments = {
       { Name = "Function", Type = "Register", Role = "Source" },
     },
   },
+
+  -- 2
   ["Load.Constant"] = {
     Arguments = {
-      { Name = "Constant", Type = "Constant" },
+      { Name = "Constant", Type = "Constant", Role = "Value" },
       { Name = "Result", Type = "Register", Role = "Result" },
     },
   },
-  ["Declaration.Function"] = {
+
+  -- 3
+  ["Load.Number"] = {
     Arguments = {
-      { Name = "Label", Type = "Label" },
-      { Name = "Name", Type = "Symbol" },
+      { Name = "Constant", Type = "Constant", Role = "Value" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 4
+  ["Any.Unknown"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 5
+  ["Any.Add"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 6
+  ["Any.Subtract"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 7
+  ["Any.Multiply"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 8
+  ["Any.Divide"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 9
+  ["Any.FloorDivide"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 10
+  ["Any.Modulo"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 11
+  ["Any.Power"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 12
+  ["Any.BitwiseAnd"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 13
+  ["Any.BitwiseOr"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 14
+  ["Any.BitwiseXor"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 15
+  ["Any.BitwiseNot"] = {
+    Arguments = {
+      { Name = "Value", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 16
+  ["Any.ShiftLeft"] = {
+    Arguments = {
+      { Name = "Value", Type = "Register", Role = "Source" },
+      { Name = "Shift", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 17
+  ["Any.ShiftRight"] = {
+    Arguments = {
+      { Name = "Value", Type = "Register", Role = "Source" },
+      { Name = "Shift", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 18
+  ["Any.Negate"] = {
+    Arguments = {
+      { Name = "Value", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 19
+  ["Any.Length"] = {
+    Arguments = {
+      { Name = "Value", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 20
+  ["Any.Concatenate"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 21
+  ["Any.Equal"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 22
+  ["Any.NotEqual"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 23
+  ["Any.LessThan"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 24
+  ["Any.LessThanOrEqual"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 23
+  ["Any.GreaterThan"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 24
+  ["Any.GreaterThanOrEqual"] = {
+    Arguments = {
+      { Name = "Left", Type = "Register", Role = "Source" },
+      { Name = "Right", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+
+  -- 25
+  ["Any.Not"] = {
+    Arguments = {
+      { Name = "Value", Type = "Register", Role = "Source" },
+      { Name = "Result", Type = "Register", Role = "Result" },
     },
   },
 }
@@ -89,7 +315,7 @@ function IrGenerator:AddConstant(Value)
   return ConstantId
 end
 
-function IrGenerator:AllocateRegister()
+function IrGenerator:AllocateRegister(State)
   for Register, Used in pairs(IrGenerator.Registers) do
     if Used == false then
       IrGenerator.Registers[Register] = true
@@ -181,6 +407,59 @@ function IrGenerator:GenerateString(State, Ast)
   return ResultRegister
 end
 
+function IrGenerator:GenerateBinary(State, Ast)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  local LeftRegister = IrGenerator:Generate(State, Ast.Left)
+  local RightRegister = IrGenerator:Generate(State, Ast.Right)
+
+  local Operators = {
+    ["+"] = "Add",
+    ["-"] = "Subtract",
+    ["*"] = "Multiply",
+    ["/"] = "Divide",
+    ["//"] = "FloorDivide",
+    ["%"] = "Modulo",
+    ["^"] = "Power",
+    ["&"] = "BitwiseAnd",
+    ["|"] = "BitwiseOr",
+    ["~"] = "BitwiseXor",
+    ["<<"] = "ShiftLeft",
+    [">>"] = "ShiftRight",
+    [".."] = "Concatenate",
+    ["=="] = "Equal",
+    ["~="] = "NotEqual",
+    ["<"] = "LessThan",
+    ["<="] = "LessThanOrEqual",
+    [">"] = "GreaterThan",
+    [">="] = "GreaterThanOrEqual",
+  }
+  local Opcode = Operators[Ast.Operator] or "Unknown"
+
+  IrGenerator.Ir = {
+    [1] = "Any." .. Opcode,
+    [2] = LeftRegister,
+    [3] = RightRegister,
+    [4] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+  IrGenerator:MarkRegisterNotUsed(State, LeftRegister)
+  IrGenerator:MarkRegisterNotUsed(State, RightRegister)
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateNumber(State, Ast)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  IrGenerator.Ir = {
+    [1] = "Load.Number",
+    [2] = Ast.Value,
+    [3] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -198,6 +477,10 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateIdentifier(State, Ast)
   elseif Ast.Kind == "String" then
     return IrGenerator:GenerateString(State, Ast)
+  elseif Ast.Kind == "Binary" then
+    return IrGenerator:GenerateBinary(State, Ast)
+  elseif Ast.Kind == "Number" then
+    return IrGenerator:GenerateNumber(State, Ast)
   else
     Logger:Error(
       State,
