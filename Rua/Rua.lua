@@ -186,7 +186,7 @@
 ]]
 
 local Rua = {}
-Rua.Version = "0.1.1" -- TODO: Need to bump version
+Rua.Version = "0.2.0" -- TODO: Need to bump version
 
 local Ansi = {
   Reset = "\27[0m",
