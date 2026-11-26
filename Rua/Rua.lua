@@ -2709,12 +2709,7 @@ function Rua.new()
     Tokens = {},
     Ast = {},
     Ir = {},
-    Backend = nil,
   }
-
-  function State:UseBackend(Backend)
-    State.Backend = Backend
-  end
 
   return State
 end
@@ -2729,13 +2724,19 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
   FilePtr:close()
 
   Rua:Tokenize(State)
-  -- PrintTable(State.Tokens)
+  if Rua._DevMode then
+    PrintTable(State.Tokens)
+  end
 
   Rua:Parse(State)
-  -- PrintTable(State.Ast)
+  if Rua._DevMode then
+    PrintTable(State.Ast)
+  end
 
   Rua:Desugar(State)
-  -- PrintTable(State.Ast)
+  if Rua._DevMode then
+    PrintTable(State.Ast)
+  end
 
   Rua:GenerateIr(State)
 
@@ -2746,8 +2747,6 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
     IrFile:write(State.LuaIr)
     IrFile:close()
   end
-
-  return State.Backend:Compile(State, FileName, OutputFile, Arguments)
 end
 
 return Rua
