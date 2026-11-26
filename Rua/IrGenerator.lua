@@ -4,7 +4,26 @@ local Logger = _G.Logger
 
 local Isa = {
   ["Push"] = {
-    Register = "Result",
+    Arguments = {
+      { Name = "Register", Type = "Register", Role = "Source" },
+    },
+  },
+  ["Call"] = {
+    Arguments = {
+      { Name = "Function", Type = "Register", Role = "Source" },
+    },
+  },
+  ["Load.Constant"] = {
+    Arguments = {
+      { Name = "Constant", Type = "Constant" },
+      { Name = "Result", Type = "Register", Role = "Result" },
+    },
+  },
+  ["Declaration.Function"] = {
+    Arguments = {
+      { Name = "Label", Type = "Label" },
+      { Name = "Name", Type = "Symbol" },
+    },
   },
 }
 
@@ -77,7 +96,7 @@ function IrGenerator:GenerateFunction(State, Ast)
   local FunctionLabel = IrGenerator:NewLabel()
 
   IrGenerator.Ir = {
-    [1] = "FunctionDeclaration",
+    [1] = "Declaration.Function",
     [2] = FunctionLabel,
     [3] = Ast.Name,
   }
@@ -177,7 +196,10 @@ function IrGenerator:GenerateIr(State)
     end
   end
 
-  State.IrProgram = IrGenerator.Program
+  State.Program = {
+    Ir = IrGenerator.Program,
+    Constants = IrGenerator.Constants,
+  }
 end
 
 function LuaIrGenerator:GenerateSymbol(Symbol)
@@ -189,13 +211,27 @@ end
 function LuaIrGenerator:GenerateArguments(Ir)
   local Arguments = {}
 
+  local Opcode = Ir[1]
+  local IsaCommand = Isa[Opcode]
+  local IsaArguments = IsaCommand.Arguments
+
   for Idx = 2, #Ir do
+    local IsaArgument = IsaArguments[Idx - 1]
     local Argument = Ir[Idx]
+    local Prefix = ""
+
+    if IsaArgument.Type == "Register" then
+      Prefix = "%"
+    elseif IsaArgument.Type == "Constant" then
+      Prefix = "$"
+    elseif IsaArgument.Type == "Label" then
+      Prefix = "@"
+    end
 
     if type(Argument) == "string" then
-      Arguments[#Arguments + 1] = string.format("%q", Argument)
+      Arguments[#Arguments + 1] = Prefix .. string.format("%q", Argument)
     else
-      Arguments[#Arguments + 1] = tostring(Argument)
+      Arguments[#Arguments + 1] = Prefix .. tostring(Argument)
     end
   end
 
@@ -220,16 +256,22 @@ function LuaIrGenerator:Generate(State)
   local Symbols = {}
   local LastLabel = 0
 
-  for _, Ir in ipairs(State.IrProgram) do
-    if Ir[1] == "FunctionDeclaration" then
+  for Idx, Constant in pairs(State.Program.Constants) do
+    Output[#Output + 1] = string.format("constant %d, %q", Idx, Constant)
+  end
+
+  Output[#Output + 1] = ""
+
+  for _, Ir in ipairs(State.Program.Ir) do
+    if Ir[1]:find("Declaration") then
       Symbols[Ir[2]] = Ir[3]
     end
   end
 
-  for _, Ir in ipairs(State.IrProgram) do
+  for _, Ir in ipairs(State.Program.Ir) do
     local Kind = Ir[1]
 
-    if Kind ~= "File" and Kind ~= "Row" and Kind ~= "FunctionDeclaration" then
+    if Kind ~= "File" and Kind ~= "Row" and (not Kind:find("Declaration")) then
       local Label = Ir[0]
       if Label ~= LastLabel then
         if LastLabel ~= 0 then
