@@ -2,8 +2,15 @@ local IrGenerator = {}
 local LuaIrGenerator = {}
 local Logger = _G.Logger
 
+local Isa = {
+  ["Push"] = {
+    Register = "Result",
+  },
+}
+
 function IrGenerator:Reset(State)
   IrGenerator.Program = {}
+  IrGenerator.Constants = {}
   IrGenerator.Pc = 0
   IrGenerator.Label = 0
   IrGenerator.NextLabelId = 1
@@ -24,18 +31,29 @@ function IrGenerator:NewIr(State)
   IrGenerator.Ir = {}
 end
 
+function IrGenerator:AddConstant(Value)
+  for Idx, Constant in pairs(IrGenerator.Constants) do
+    if Constant == Value then
+      return Idx
+    end
+  end
+
+  local ConstantId = #IrGenerator.Constants + 1
+  IrGenerator.Constants[ConstantId] = Value
+  return ConstantId
+end
+
 function IrGenerator:AllocateRegister()
   for Register, Used in pairs(IrGenerator.Registers) do
-    if Used == true then
-      break
+    if Used == false then
+      IrGenerator.Registers[Register] = true
+      return Register
     end
-
-    return Register
   end
 end
 
-function IrGenerator:MarkRegisterNotUsed(Register)
-  IrGenerator[Register] = false
+function IrGenerator:MarkRegisterNotUsed(State, Register)
+  IrGenerator.Registers[Register] = false
 end
 
 function IrGenerator:NewLabel(Name)
@@ -45,11 +63,14 @@ function IrGenerator:NewLabel(Name)
 end
 
 function IrGenerator:GenerateBody(State, Body, Label)
+  local PreviousLabel = IrGenerator.Label
   IrGenerator.Label = Label
 
   for _, Ast in ipairs(Body) do
     IrGenerator:Generate(State, Ast)
   end
+
+  IrGenerator.Label = PreviousLabel
 end
 
 function IrGenerator:GenerateFunction(State, Ast)
@@ -67,22 +88,46 @@ end
 
 function IrGenerator:GenerateFunctionCall(State, Ast)
   -- TODO: Use jump when function is already definied in scope
-  -- TODO: Implement arguments
 
   local FunctionName = IrGenerator:Generate(State, Ast.Name)
+
+  for _, Argument in ipairs(Ast.Arguments) do
+    local ArgumentRegister = IrGenerator:Generate(State, Argument)
+    IrGenerator.Ir = {
+      [1] = "Push",
+      [2] = ArgumentRegister,
+    }
+    IrGenerator:NewIr(State)
+    IrGenerator:MarkRegisterNotUsed(State, ArgumentRegister)
+  end
+
   IrGenerator.Ir = {
     [1] = "Call",
     [2] = FunctionName,
   }
   IrGenerator:NewIr(State)
-  IrGenerator:MarkRegisterNotUsed(FunctionName)
+  IrGenerator:MarkRegisterNotUsed(State, FunctionName)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast)
-  local ResultRegister = IrGenerator:AllocateRegister()
+  local Constant = IrGenerator:AddConstant(Ast.Name)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
   IrGenerator.Ir = {
-    [1] = "Constant",
-    [2] = Ast.Name,
+    [1] = "Load.Constant",
+    [2] = Constant,
+    [3] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
+function IrGenerator:GenerateString(State, Ast)
+  local Constant = IrGenerator:AddConstant(Ast.Value)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  IrGenerator.Ir = {
+    [1] = "Load.Constant",
+    [2] = Constant,
     [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
@@ -105,6 +150,8 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateFunctionCall(State, Ast)
   elseif Ast.Kind == "Identifier" then
     return IrGenerator:GenerateIdentifier(State, Ast)
+  elseif Ast.Kind == "String" then
+    return IrGenerator:GenerateString(State, Ast)
   else
     Logger:Error(
       State,
@@ -126,7 +173,7 @@ function IrGenerator:GenerateIr(State)
     local ResultRegister = IrGenerator:Generate(State, Ast)
 
     if ResultRegister then
-      IrGenerator:MarkNotUsed(State, ResultRegister)
+      IrGenerator:MarkRegisterNotUsed(State, ResultRegister)
     end
   end
 

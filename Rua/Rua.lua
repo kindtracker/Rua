@@ -206,7 +206,7 @@ local AstDesugar = FrontEnd.AstDesugar
 local IrGenerator = FrontEnd.IrGenerator
 local LuaIrGenerator = FrontEnd.LuaIrGenerator
 
-local function PrintTable(Value, Indent)
+function Logger:PrintTable(Value, Indent)
   Indent = Indent or 0
 
   for Key, Item in pairs(Value) do
@@ -219,7 +219,7 @@ local function PrintTable(Value, Indent)
 
     if type(Item) == "table" then
       io.write("{\n")
-      PrintTable(Item, Indent + 1)
+      Logger:PrintTable(Item, Indent + 1)
       io.write(string.rep("  ", Indent) .. "}\n")
     else
       if type(Item) == "string" then
@@ -324,17 +324,17 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
 
   Rua:Tokenize(State)
   if Rua._DevMode then
-    PrintTable(State.Tokens)
+    Logger:PrintTable(State.Tokens)
   end
 
   Rua:Parse(State)
   if Rua._DevMode then
-    PrintTable(State.Ast)
+    Logger:PrintTable(State.Ast)
   end
 
   Rua:Desugar(State)
   if Rua._DevMode then
-    PrintTable(State.Ast)
+    Logger:PrintTable(State.Ast)
   end
 
   Rua:GenerateIr(State)
