@@ -37,7 +37,7 @@ function IrGenerator:MarkRegisterNotUsed(Register)
   IrGenerator[Register] = false
 end
 
-function IrGenerator:NewLabel()
+function IrGenerator:NewLabel(Name)
   local LabeId = IrGenerator.NextLabelId
   IrGenerator.NextLabelId = IrGenerator.NextLabelId + 1
   return LabeId
@@ -53,6 +53,14 @@ end
 
 function IrGenerator:GenerateFunction(State, Ast)
   local FunctionLabel = IrGenerator:NewLabel()
+
+  IrGenerator.Ir = {
+    [1] = "FunctionDeclaration",
+    [2] = FunctionLabel,
+    [3] = Ast.Name,
+  }
+  IrGenerator:NewIr(State)
+
   IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
 end
 
@@ -70,8 +78,6 @@ function IrGenerator:GenerateFunctionCall(State, Ast)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast)
-  -- TODO: Add constant pool
-
   local ResultRegister = IrGenerator:AllocateRegister()
   IrGenerator.Ir = {
     [1] = "Constant",
@@ -127,15 +133,32 @@ function IrGenerator:GenerateIr(State)
 end
 
 function IrGenerator:GenerateLuaIr(State)
-  State.LuaIr = "::Main::\n"
+  State.LuaIr = ""
 
-  for _, Ir in ipairs(State.IrProgram) do
-    local Text = ""
+  local LastLabel = 0
+  local Symbols = {}
+
+  local function GenerateSymbol(Symbol)
+    if Symbol.Kind == "Identifier" then
+      return Symbol.Name
+    end
+  end
+
+  local function Generate(Ir, Indent)
+    if Ir[1] == "File" or Ir[1] == "Row" then
+      return
+    end
+
+    local Label = Ir[0]
+    if Label > LastLabel then
+      local FunctionName = GenerateSymbol(Symbols[Label])
+      local Text = string.format("function %s()", FunctionName)
+      State.LuaIr = State.LuaIr .. Text .. "\n"
+    end
+
     local Arguments = {}
-
     for Idx = 2, #Ir do
       local Argument = Ir[Idx]
-
       if type(Argument) == "string" then
         Arguments[#Arguments + 1] = string.format("%q", Argument)
       else
@@ -143,8 +166,33 @@ function IrGenerator:GenerateLuaIr(State)
       end
     end
 
-    Text = string.format("  %s(%s)", Ir[1], table.concat(Arguments, ", "))
+    local IndentString = ("  "):rep(Indent)
+    local Text = string.format("%s%s(%s)", IndentString, Ir[1], table.concat(Arguments, ", "))
     State.LuaIr = State.LuaIr .. Text .. "\n"
+
+    LastLabel = Label
+  end
+
+  for Idx, Ir in ipairs(State.IrProgram) do
+    if Ir[1] == "FunctionDeclaration" then
+      local Label = Ir[2]
+      local Name = Ir[3]
+      Symbols[Label] = Name
+      table.remove(State.IrProgram, Idx)
+    end
+  end
+
+  for _, Ir in ipairs(State.IrProgram) do
+    local Indent = 0
+    if Ir[0] ~= 0 then
+      Indent = 1
+    end
+
+    Generate(Ir, Indent)
+  end
+
+  if LastLabel ~= 0 then
+    State.LuaIr = State.LuaIr .. "end"
   end
 end
 
