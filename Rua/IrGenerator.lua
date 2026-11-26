@@ -1,13 +1,16 @@
 local IrGenerator = {}
 local Logger = _G.Logger
 
--- TODO: Implement register allocator
-
 function IrGenerator:Reset(State)
   IrGenerator.Program = {}
   IrGenerator.Pc = 0
   IrGenerator.Label = 0
   IrGenerator.NextLabelId = 1
+  IrGenerator.Registers = {}
+
+  for Idx = 1, 256 do
+    IrGenerator.Registers[Idx] = false
+  end
 
   State.Ir = {}
 end
@@ -18,6 +21,20 @@ function IrGenerator:NewIr(State)
   table.insert(IrGenerator.Program, Ir)
 
   IrGenerator.Ir = {}
+end
+
+function IrGenerator:AllocateRegister()
+  for Register, Used in pairs(IrGenerator.Registers) do
+    if Used == true then
+      break
+    end
+
+    return Register
+  end
+end
+
+function IrGenerator:MarkRegisterNotUsed(Register)
+  IrGenerator[Register] = false
 end
 
 function IrGenerator:NewLabel()
@@ -49,12 +66,13 @@ function IrGenerator:GenerateFunctionCall(State, Ast)
     [2] = FunctionName,
   }
   IrGenerator:NewIr(State)
+  IrGenerator:MarkRegisterNotUsed(FunctionName)
 end
 
 function IrGenerator:GenerateIdentifier(State, Ast)
   -- TODO: Add constant pool
-  local ResultRegister = 1
 
+  local ResultRegister = IrGenerator:AllocateRegister()
   IrGenerator.Ir = {
     [1] = "Constant",
     [2] = Ast.Name,
