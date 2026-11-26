@@ -1,27 +1,85 @@
 local IrGenerator = {}
+local Logger = _G.Logger
+
+-- TODO: Implement register allocator
 
 function IrGenerator:Reset(State)
   IrGenerator.Program = {}
   IrGenerator.Pc = 0
+  IrGenerator.Label = 0
+  IrGenerator.NextLabelId = 1
 
   State.Ir = {}
 end
 
 function IrGenerator:NewIr(State)
   local Ir = IrGenerator.Ir
+  Ir[0] = IrGenerator.Label
   table.insert(IrGenerator.Program, Ir)
 
   IrGenerator.Ir = {}
 end
 
-function IrGenerator:Generate(State, Ast, Data)
+function IrGenerator:NewLabel()
+  local LabeId = IrGenerator.NextLabelId
+  IrGenerator.NextLabelId = IrGenerator.NextLabelId + 1
+  return LabeId
+end
+
+function IrGenerator:GenerateBody(State, Body, Label)
+  IrGenerator.Label = Label
+
+  for _, Ast in ipairs(Body) do
+    IrGenerator:Generate(State, Ast)
+  end
+end
+
+function IrGenerator:GenerateFunction(State, Ast)
+  local FunctionLabel = IrGenerator:NewLabel()
+  IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
+end
+
+function IrGenerator:GenerateFunctionCall(State, Ast)
+  -- TODO: Use jump when function is already definied in scope
+  -- TODO: Implement arguments
+
+  local FunctionName = IrGenerator:Generate(State, Ast.Name)
   IrGenerator.Ir = {
-    [1] = "Row",
-    [2] = Ast.Row,
+    [1] = "Call",
+    [2] = FunctionName,
+  }
+  IrGenerator:NewIr(State)
+end
+
+function IrGenerator:GenerateIdentifier(State, Ast)
+  -- TODO: Add constant pool
+  local ResultRegister = 1
+
+  IrGenerator.Ir = {
+    [1] = "Constant",
+    [2] = Ast.Name,
+    [3] = ResultRegister,
   }
   IrGenerator:NewIr(State)
 
-  if false then
+  return ResultRegister
+end
+
+function IrGenerator:Generate(State, Ast)
+  if Ast.Row then
+    IrGenerator.Ir = {
+      [1] = "Row",
+      [2] = Ast.Row,
+    }
+    IrGenerator:NewIr(State)
+  end
+
+  if Ast.Kind == "Function" then
+    return IrGenerator:GenerateFunction(State, Ast)
+  elseif Ast.Kind == "FunctionCall" then
+    return IrGenerator:GenerateFunctionCall(State, Ast)
+  elseif Ast.Kind == "Identifier" then
+    return IrGenerator:GenerateIdentifier(State, Ast)
   else
     Logger:Error(
       State,
@@ -46,36 +104,29 @@ function IrGenerator:GenerateIr(State)
       IrGenerator:MarkNotUsed(State, ResultRegister)
     end
   end
+
+  State.IrProgram = IrGenerator.Program
 end
 
 function IrGenerator:GenerateLuaIr(State)
   State.LuaIr = "::Main::\n"
 
-  local function GenerateBlock(IrProgram)
-    for _, Ir in ipairs(IrProgram) do
-      local Text = ""
-      local Arguments = {}
+  for _, Ir in ipairs(State.IrProgram) do
+    local Text = ""
+    local Arguments = {}
 
-      for Idx = 2, #Ir do
-        local Argument = Ir[Idx]
+    for Idx = 2, #Ir do
+      local Argument = Ir[Idx]
 
-        if type(Argument) == "string" then
-          Arguments[#Arguments + 1] = string.format("%q", Argument)
-        else
-          Arguments[#Arguments + 1] = tostring(Argument)
-        end
+      if type(Argument) == "string" then
+        Arguments[#Arguments + 1] = string.format("%q", Argument)
+      else
+        Arguments[#Arguments + 1] = tostring(Argument)
       end
-
-      Text = string.format("  %s(%s)", Ir[1], table.concat(Arguments, ", "))
-      State.LuaIr = State.LuaIr .. Text .. "\n"
     end
-  end
 
-  GenerateBlock(State.Ir)
-
-  for _, Function in ipairs(State.IrFunctions) do
-    State.LuaIr = State.LuaIr .. string.format("\n::Label%d::\n", Function.Label)
-    GenerateBlock(Function.IrProgram)
+    Text = string.format("  %s(%s)", Ir[1], table.concat(Arguments, ", "))
+    State.LuaIr = State.LuaIr .. Text .. "\n"
   end
 end
 
