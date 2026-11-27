@@ -6,15 +6,14 @@ IrGenerator:
   Generate Function Declaration: Partially Implemented
   Generate Return: Not Implemented
   Generate Break: Not Implemented
-  Generate Method Call: Not Implemented
   Generate Numeric For: Not Implemented
   Generate Generic For: Not Implemented
   Generate If: Not Implemented
   Generate While: Not Implemented
-  Generate Expression: Not Implemented
+  Generate Expression: Implemented
   Generate Binary Expression: Implemented
   Generate Unary Expression: Implemented
-  Generate Identifier: Not Implemented
+  Generate Identifier: Implemented
   Generate Number Literal: Implemented
   Generate String Literal: Implemented
   Generate Boolean Literal: Not Implemented
@@ -187,7 +186,7 @@ function IrGenerator:GenerateFunction(State, Ast)
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
     [2] = FunctionLabel,
-    [3] = Ast.Name,
+    [3] = Ast.Name.Name,
   }
   IrGenerator:NewIr(State)
 
@@ -332,12 +331,14 @@ end
 function IrGenerator:GenerateVariableDeclaration(State, Ast)
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
 
-  for _, Variable in pairs(Ast.Name) do
+  for Idx, Variable in pairs(Ast.Name) do
+    local Value = Ast.Value[((Idx - 1) % #Ast.Value) + 1]
+
     local VariableRegister = IrGenerator:AllocateRegister(State)
     Scope[Variable.Name] = VariableRegister
 
     if Ast.Value then
-      local ValueRegister = IrGenerator:Generate(State, Variable.Value)
+      local ValueRegister = IrGenerator:Generate(State, Value)
 
       IrGenerator.Ir = {
         [1] = "Move",
@@ -412,6 +413,14 @@ function IrGenerator:GenerateIr(State)
   }
   IrGenerator:NewIr(State)
 
+  IrGenerator.Label = IrGenerator:NewSymbol(State)
+  IrGenerator.Ir = {
+    [1] = "Declaration.Function",
+    [2] = IrGenerator.Label,
+    [3] = "_start",
+  }
+  IrGenerator:NewIr(State)
+
   table.insert(IrGenerator.Scopes, {})
 
   for _, Ast in ipairs(State.Ast) do
@@ -429,9 +438,7 @@ function IrGenerator:GenerateIr(State)
 end
 
 function LuaIrGenerator:GenerateSymbol(Symbol)
-  if Symbol.Kind == "Identifier" then
-    return Symbol.Name
-  end
+  return Symbol
 end
 
 function LuaIrGenerator:GenerateArguments(Ir)
@@ -501,7 +508,7 @@ function LuaIrGenerator:Generate(State)
       local Label = Ir[0]
       if Label ~= LastLabel then
         if LastLabel ~= 0 then
-          Output[#Output + 1] = "end"
+          Output[#Output + 1] = "end\n"
         end
 
         if Label ~= 0 then

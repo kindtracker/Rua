@@ -947,6 +947,8 @@ function Parser:ParseBody(State, AllowedEnds)
   local Body = {}
   local HasEnd = false
 
+  Parser.InFunction = Parser.InFunction + 1
+
   while Parser.Token ~= nil do
     local IsEnd = false
 
@@ -969,6 +971,8 @@ function Parser:ParseBody(State, AllowedEnds)
     table.insert(Body, Statement)
   end
 
+  Parser.InFunction = Parser.InFunction - 1
+
   if not HasEnd then
     Logger:Error(State, "SyntaxError", "Expected '" .. table.concat(AllowedEnds, "' or '") .. "' before end of file")
   end
@@ -983,7 +987,7 @@ function Parser:ParseFunctionCall(State, Statement)
   Parser:ParseArgumentList(State, Statement)
 end
 
-function Parser:ParseFunction(State, Statement)
+function Parser:ParseFunctionDeclaration(State, Statement)
   Statement.Kind = "FunctionDeclaration"
   Parser:Expect(State, "Keyword", "function")
   Statement.Name = Parser:ParseName(State)
@@ -1001,6 +1005,19 @@ function Parser:ParseVariableAssign(State, Statement)
   Parser:Advance(State)
   local Value = Parser:ParseExpressionList(State)
   Statement.Value = Value
+end
+
+function Parser:ParseVariableDeclaration(State, Statement)
+  Statement.Kind = "VariableDeclaration"
+  Statement.Name = Parser:ParseNameList(State)
+
+  if Parser:CheckToken(State, {
+    Kind = "Operator",
+    Value = "=",
+  }) then
+    Parser:Advance(State)
+    Statement.Value = Parser:ParseExpressionList(State)
+  end
 end
 
 function Parser:ParseReturn(State, Statement)
@@ -1153,14 +1170,13 @@ function Parser:ParseStatement(State)
       Parser:GoToStart(State)
       Parser:ParseFunctionCall(State, Statement)
       return Statement
-    elseif Parser.Token and StringHasLetter("=.,", Parser.Token.Value) then
+    elseif Parser.Token and StringHasLetter(".,=", Parser.Token.Value) and Parser.InFunction ~= 0 then
       Parser:GoToStart(State)
       Parser:ParseVariableAssign(State, Statement)
       return Statement
     else
       Parser:GoToStart(State)
-      Statement.Kind = "VariableDeclaration"
-      Statement.Name = Parser:ParseNameList(State)
+      Parser:ParseVariableDeclaration(State, Statement)
       return Statement
     end
   elseif Parser:CheckToken(State, {
@@ -1174,7 +1190,7 @@ function Parser:ParseStatement(State)
       return Statement
     elseif Parser.Token.Value == "function" then
       Parser:GoToStart(State)
-      Parser:ParseFunction(State, Statement)
+      Parser:ParseFunctionDeclaration(State, Statement)
       return Statement
     elseif Parser.Token.Value == "return" then
       Parser:GoToStart(State)
@@ -1219,6 +1235,7 @@ function Parser:ParseStatement(State)
 end
 
 function Parser:Reset(State)
+  Parser.InFunction = 0
   Parser.Token = nil
   Parser.Index = 1
   State.Ast = {}
