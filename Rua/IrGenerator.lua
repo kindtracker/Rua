@@ -366,7 +366,7 @@ function IrGenerator:GenerateVariableDeclaration(State, Ast)
     end
   end
 end
-
+-- meow
 function IrGenerator:GenerateVariableAssign(State, Ast)
   for Idx, Variable in pairs(Ast.Name) do
     local Value = Ast.Value[((Idx - 1) % #Ast.Value) + 1]
