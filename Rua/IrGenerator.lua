@@ -164,6 +164,16 @@ function IrGenerator:AllocateRegister(State)
 end
 
 function IrGenerator:MarkRegisterNotUsed(State, Register)
+  for Idx = #IrGenerator.Scopes, 1, -1 do
+    local Scope = IrGenerator.Scopes[Idx]
+
+    for _, VariableRegister in pairs(Scope) do
+      if VariableRegister == Register then
+        return
+      end
+    end
+  end
+
   IrGenerator.Registers[Register] = false
 end
 
@@ -366,7 +376,7 @@ function IrGenerator:GenerateVariableDeclaration(State, Ast)
     end
   end
 end
--- meow
+
 function IrGenerator:GenerateVariableAssign(State, Ast)
   for Idx, Variable in pairs(Ast.Name) do
     local Value = Ast.Value[((Idx - 1) % #Ast.Value) + 1]
