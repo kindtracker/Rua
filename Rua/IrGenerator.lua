@@ -1,13 +1,11 @@
 --[[
 IrGenerator:
   Generate Function Call: Implemented
-  Generate Variable Assignment: Not Implemented
-  Generate Local Statement: Not Implemented
+  Generate Variable Assignment: Implemented
+  Generate Local Statement: Partially Implemented -- TODO: Need to check if this TODO is correct
   Generate Function Declaration: Partially Implemented
   Generate Return: Not Implemented
   Generate Break: Not Implemented
-  Generate Numeric For: Not Implemented
-  Generate Generic For: Not Implemented
   Generate If: Not Implemented
   Generate While: Not Implemented
   Generate Expression: Implemented
@@ -16,7 +14,7 @@ IrGenerator:
   Generate Identifier: Implemented
   Generate Number Literal: Implemented
   Generate String Literal: Implemented
-  Generate Boolean Literal: Not Implemented
+  Generate Boolean Literal: Implemented
   Generate Nil Literal: Not Implemented
   Generate Table Constructor: Not Implemented
   Generate Table Indexing: Not Implemented
@@ -54,6 +52,12 @@ local Isa = {
   ["Load.Number"] = {
     Arguments = {
       { Name = "Number", Type = "Number" },
+      { Name = "Result", Type = "Register" },
+    },
+  },
+  ["Load.Boolean"] = {
+    Arguments = {
+      { Name = "Number", Type = "Boolean" },
       { Name = "Result", Type = "Register" },
     },
   },
@@ -328,6 +332,18 @@ function IrGenerator:GenerateNumber(State, Ast)
   return ResultRegister
 end
 
+function IrGenerator:GenerateBoolean(State, Ast)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+  IrGenerator.Ir = {
+    [1] = "Load.Boolean",
+    [2] = Ast.Value,
+    [3] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
 function IrGenerator:GenerateVariableDeclaration(State, Ast)
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
 
@@ -369,6 +385,10 @@ function IrGenerator:GenerateVariableAssign(State, Ast)
   end
 end
 
+function IrGenerator:GenerateGroup(State, Ast)
+  return IrGenerator:Generate(State, Ast.Expression)
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -392,10 +412,14 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateString(State, Ast)
   elseif Ast.Kind == "Number" then
     return IrGenerator:GenerateNumber(State, Ast)
+  elseif Ast.Kind == "Boolean" then
+    return IrGenerator:GenerateBoolean(State, Ast)
   elseif Ast.Kind == "Binary" then
     return IrGenerator:GenerateBinary(State, Ast)
   elseif Ast.Kind == "Unary" then
     return IrGenerator:GenerateUnary(State, Ast)
+  elseif Ast.Kind == "Group" then
+    return IrGenerator:GenerateGroup(State, Ast)
   else
     Logger:Error(
       State,
