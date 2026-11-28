@@ -47,6 +47,11 @@ local Isa = {
       { Name = "Result", Type = "Register" },
     },
   },
+  ["Load.Nil"] = {
+    Arguments = {
+      { Name = "Result", Type = "Register" },
+    },
+  },
   ["Declaration.Function"] = {
     Arguments = {
       { Name = "Label", Type = "Label" },
@@ -538,6 +543,18 @@ function IrGenerator:GenerateWhile(State, Ast)
   IrGenerator.Label = AfterLabel
 end
 
+function IrGenerator:GenerateNil(State, Ast)
+  local ResultRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "Load.Nil",
+    [2] = ResultRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  return ResultRegister
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -553,6 +570,8 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateNumber(State, Ast)
   elseif Ast.Kind == "Boolean" then
     return IrGenerator:GenerateBoolean(State, Ast)
+  elseif Ast.Kind == "Nil" then
+    return IrGenerator:GenerateNil(State, Ast)
   elseif Ast.Kind == "Binary" then
     return IrGenerator:GenerateBinary(State, Ast)
   elseif Ast.Kind == "Unary" then
