@@ -3,8 +3,8 @@ IrGenerator:
   Generate Function Call: Implemented
   Generate Variable Assignment: Implemented
   Generate Function Declaration: Implemented
-  Generate Return: Not Implemented
-  Generate Break: Not Implemented
+  Generate Return: Implemented
+  Generate Break: Implemented
   Generate If: Implemented
   Generate While: Implemented
   Generate Expression: Implemented
@@ -14,7 +14,7 @@ IrGenerator:
   Generate Number Literal: Implemented
   Generate String Literal: Implemented
   Generate Boolean Literal: Implemented
-  Generate Nil Literal: Not Implemented
+  Generate Nil Literal: Implemented
   Generate Anonymous Function: Not Implemented
   Generate Table Constructor: Not Implemented
   Generate Table Indexing: Not Implemented
@@ -105,6 +105,7 @@ local Isa = {
   ["Get.Pc"] = {
     Arguments = {
       { Name = "Destination", Type = "Register" },
+      { Name = "Offset", Type = "Number" },
     },
   },
 }
@@ -166,6 +167,8 @@ function IrGenerator:Reset(State)
   IrGenerator.NextSymbolId = 1
   IrGenerator.Registers = {}
   IrGenerator.Scopes = {}
+  IrGenerator.BodyStarts = {}
+  IrGenerator.BodyEnds = {}
 
   IrGenerator.DataStack = 1
   IrGenerator.CallStack = 2
@@ -301,8 +304,6 @@ function IrGenerator:GenerateFunction(State, Ast)
 end
 
 function IrGenerator:GenerateFunctionCall(State, Ast)
-  -- TODO: Use jump when function is already definied in scope
-
   local FunctionName = IrGenerator:Generate(State, Ast.Name)
 
   for _, Argument in ipairs(Ast.Arguments) do
@@ -321,6 +322,7 @@ function IrGenerator:GenerateFunctionCall(State, Ast)
   IrGenerator.Ir = {
     [1] = "Get.Pc",
     [2] = PcRegister,
+    [3] = 1,
   }
   IrGenerator:NewIr(State)
 
@@ -551,6 +553,12 @@ function IrGenerator:GenerateWhile(State, Ast)
   local BodyLabel = IrGenerator:NewSymbol(State)
   local AfterLabel = IrGenerator:NewSymbol(State)
 
+  local BodyStartIdx = #IrGenerator.BodyStarts + 1
+  table.insert(IrGenerator.BodyStarts, BodyLabel)
+
+  local BodyEndIdx = #IrGenerator.BodyEnds + 1
+  table.insert(IrGenerator.BodyEnds, AfterLabel)
+
   IrGenerator.Ir = {
     [1] = "Jump.Always",
     [2] = ConditionLabel,
@@ -574,8 +582,6 @@ function IrGenerator:GenerateWhile(State, Ast)
   }
   IrGenerator:NewIr(State)
 
-  local PreviousLabel = IrGenerator.Label
-
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
   IrGenerator.Label = BodyLabel
   IrGenerator.Ir = {
@@ -583,6 +589,9 @@ function IrGenerator:GenerateWhile(State, Ast)
     [2] = ConditionLabel,
   }
   IrGenerator:NewIr(State)
+
+  table.remove(IrGenerator.BodyStarts, BodyStartIdx)
+  table.remove(IrGenerator.BodyEnds, BodyEndIdx)
 
   IrGenerator.Label = AfterLabel
 end
@@ -641,6 +650,16 @@ function IrGenerator:GenerateReturn(State, Ast)
   IrGenerator:MarkRegisterNotUsed(State, PcRegister)
 end
 
+function IrGenerator:GenerateBreak(State, Ast)
+  local BodyEnd = IrGenerator.BodyEnds[#IrGenerator.BodyEnds]
+
+  IrGenerator.Ir = {
+    [1] = "Jump.Always",
+    [2] = BodyEnd,
+  }
+  IrGenerator:NewIr(State)
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -680,6 +699,8 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateWhile(State, Ast)
   elseif Ast.Kind == "Return" then
     return IrGenerator:GenerateReturn(State, Ast)
+  elseif Ast.Kind == "Break" then
+    return IrGenerator:GenerateBreak(State, Ast)
   else
     Logger:Error(
       State,
