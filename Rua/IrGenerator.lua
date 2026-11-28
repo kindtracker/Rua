@@ -20,6 +20,8 @@ IrGenerator:
   Generate Table Indexing: Not Implemented
   Generate Member Access: Not Implemented
   Generate Anonymous Function: Not Implemented
+
+TODO: Add local registers
 ]]
 
 local IrGenerator = {}
@@ -35,7 +37,12 @@ local Isa = {
   },
   ["Push"] = {
     Arguments = {
-      { Name = "Register", Type = "Register" },
+      { Name = "Source", Type = "Register" },
+    },
+  },
+  ["Pop"] = {
+    Arguments = {
+      { Name = "Result", Type = "Register" },
     },
   },
   ["Call"] = {
@@ -57,7 +64,7 @@ local Isa = {
   },
   ["Load.Boolean"] = {
     Arguments = {
-      { Name = "Number", Type = "Boolean" },
+      { Name = "Boolean", Type = "Boolean" },
       { Name = "Result", Type = "Register" },
     },
   },
@@ -177,6 +184,26 @@ function IrGenerator:MarkRegisterNotUsed(State, Register)
   IrGenerator.Registers[Register] = false
 end
 
+function IrGenerator:DefineVariable(State, Variable, Value)
+  local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
+  local VariableRegister = IrGenerator:AllocateRegister(State)
+  Scope[Variable.Name] = VariableRegister
+
+  if Value then
+    local ValueRegister = IrGenerator:Generate(State, Value)
+
+    IrGenerator.Ir = {
+      [1] = "Move",
+      [2] = ValueRegister,
+      [3] = VariableRegister,
+    }
+    IrGenerator:NewIr(State)
+    IrGenerator:MarkRegisterNotUsed(State, ValueRegister)
+  end
+
+  return VariableRegister
+end
+
 function IrGenerator:NewSymbol(State)
   local SymbolId = IrGenerator.NextSymbolId
   IrGenerator.NextSymbolId = IrGenerator.NextSymbolId + 1
@@ -204,7 +231,23 @@ function IrGenerator:GenerateFunction(State, Ast)
   }
   IrGenerator:NewIr(State)
 
+  local PreviousLabel = IrGenerator.Label
+  IrGenerator.Label = FunctionLabel
+
+  local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
+  for _, Argument in pairs(Ast.Arguments) do
+    local ArgumentRegister = IrGenerator:DefineVariable(State, Ast.Name)
+
+    IrGenerator.Ir = {
+      [1] = "Pop",
+      [2] = ArgumentRegister,
+    }
+    IrGenerator:NewIr(State)
+  end
+
   IrGenerator:GenerateBody(State, Ast.Body, FunctionLabel)
+
+  IrGenerator.Label = PreviousLabel
 end
 
 function IrGenerator:GenerateFunctionCall(State, Ast)
@@ -359,21 +402,7 @@ function IrGenerator:GenerateVariableDeclaration(State, Ast)
 
   for Idx, Variable in pairs(Ast.Name) do
     local Value = Ast.Value[((Idx - 1) % #Ast.Value) + 1]
-
-    local VariableRegister = IrGenerator:AllocateRegister(State)
-    Scope[Variable.Name] = VariableRegister
-
-    if Ast.Value then
-      local ValueRegister = IrGenerator:Generate(State, Value)
-
-      IrGenerator.Ir = {
-        [1] = "Move",
-        [2] = ValueRegister,
-        [3] = Register,
-      }
-      IrGenerator:NewIr(State)
-      IrGenerator:MarkRegisterNotUsed(State, ValueRegister)
-    end
+    IrGenerator:DefineVariable(State, Variable, Value)
   end
 end
 

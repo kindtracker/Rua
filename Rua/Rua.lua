@@ -313,6 +313,7 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
 
   Rua:GenerateIr(State)
   if Rua._DevMode then
+    Logger:PrintTable(State.Program.Ir)
     Rua:GenerateLuaIr(State)
 
     local IrFile = io.open("Dev/Ir.lua", "w")
