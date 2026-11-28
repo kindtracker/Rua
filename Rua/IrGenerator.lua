@@ -86,6 +86,11 @@ local Isa = {
       { Name = "Destination", Type = "Label" },
     },
   },
+  ["Jump.Always"] = {
+    Arguments = {
+      { Name = "Destination", Type = "Label" },
+    },
+  },
 }
 
 local BinaryOperations = {
@@ -466,10 +471,30 @@ function IrGenerator:GenerateIf(State, Ast)
 
   IrGenerator:MarkRegisterNotUsed(State, ConditionRegister)
 
+  local AfterLabel = IrGenerator:NewSymbol(State)
+  local PreviousLabel = IrGenerator.Label
+
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
+  IrGenerator.Label = BodyLabel
+  IrGenerator.Ir = {
+    [1] = "Jump.Always",
+    [2] = AfterLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.Label = PreviousLabel
+
   if Ast.Else then
-    IrGenerator:GenerateBody(State, Ast.Body, ElseLabel)
+    IrGenerator:GenerateBody(State, Ast.Else, BodyLabel)
+    IrGenerator.Label = ElseLabel
+    IrGenerator.Ir = {
+      [1] = "Jump.Always",
+      [2] = AfterLabel,
+    }
+    IrGenerator:NewIr(State)
   end
+
+  IrGenerator.Label = AfterLabel
 end
 
 function IrGenerator:Generate(State, Ast)
