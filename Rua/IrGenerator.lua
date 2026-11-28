@@ -6,8 +6,8 @@ IrGenerator:
   Generate Function Declaration: Implemented
   Generate Return: Not Implemented
   Generate Break: Not Implemented
-  Generate If: Not Implemented
-  Generate While: Not Implemented
+  Generate If: Implemented
+  Generate While: Implemented
   Generate Expression: Implemented
   Generate Binary Expression: Implemented
   Generate Unary Expression: Implemented
@@ -497,6 +497,47 @@ function IrGenerator:GenerateIf(State, Ast)
   IrGenerator.Label = AfterLabel
 end
 
+function IrGenerator:GenerateWhile(State, Ast)
+  local ConditionLabel = IrGenerator:NewSymbol(State)
+  local BodyLabel = IrGenerator:NewSymbol(State)
+  local AfterLabel = IrGenerator:NewSymbol(State)
+
+  IrGenerator.Ir = {
+    [1] = "Jump.Always",
+    [2] = ConditionLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.Label = ConditionLabel
+
+  local ConditionRegister = IrGenerator:Generate(State, Ast.Condition)
+
+  IrGenerator.Ir = {
+    [1] = "Jump.True",
+    [2] = ConditionRegister,
+    [3] = BodyLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.Ir = {
+    [1] = "Jump.Always",
+    [2] = AfterLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  local PreviousLabel = IrGenerator.Label
+
+  IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
+  IrGenerator.Label = BodyLabel
+  IrGenerator.Ir = {
+    [1] = "Jump.Always",
+    [2] = ConditionLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.Label = AfterLabel
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -518,6 +559,8 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateUnary(State, Ast)
   elseif Ast.Kind == "Group" then
     return IrGenerator:GenerateGroup(State, Ast)
+  elseif Ast.Kind == "Identifier" then
+    return IrGenerator:GenerateIdentifier(State, Ast)
   elseif Ast.Kind == "FunctionDeclaration" then
     return IrGenerator:GenerateFunction(State, Ast)
   elseif Ast.Kind == "FunctionCall" then
@@ -526,10 +569,10 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateVariableDeclaration(State, Ast)
   elseif Ast.Kind == "VariableAssign" then
     return IrGenerator:GenerateVariableAssign(State, Ast)
-  elseif Ast.Kind == "Identifier" then
-    return IrGenerator:GenerateIdentifier(State, Ast)
   elseif Ast.Kind == "If" then
     return IrGenerator:GenerateIf(State, Ast)
+  elseif Ast.Kind == "While" then
+    return IrGenerator:GenerateWhile(State, Ast)
   else
     Logger:Error(
       State,
