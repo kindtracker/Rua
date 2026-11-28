@@ -164,17 +164,21 @@ function IrGenerator:Reset(State)
   IrGenerator.Constants = {}
   IrGenerator.Pc = 0
   IrGenerator.Label = 0
+  IrGenerator.StartLabel = 1
   IrGenerator.NextSymbolId = 1
   IrGenerator.Registers = {}
+  IrGenerator.GlobalRegisters = {}
   IrGenerator.Scopes = {}
   IrGenerator.BodyStarts = {}
   IrGenerator.BodyEnds = {}
 
+  IrGenerator.GlobalRegisterOffset = 32767
   IrGenerator.DataStack = 1
   IrGenerator.CallStack = 2
 
   for Idx = 1, 256 do
     IrGenerator.Registers[Idx] = false
+    IrGenerator.GlobalRegisters[Idx] = false
   end
 
   State.Ir = {}
@@ -200,11 +204,22 @@ function IrGenerator:AddConstant(Value)
   return ConstantId
 end
 
-function IrGenerator:AllocateRegister(State)
-  for Register, Used in pairs(IrGenerator.Registers) do
+function IrGenerator:AllocateRegister(State, Global)
+  Global = Global or false
+
+  local Registers = Global and IrGenerator.GlobalRegisters or IrGenerator.Registers
+
+  for Register, Used in pairs(Registers) do
     if Used == false then
-      IrGenerator.Registers[Register] = true
-      return Register
+      Registers[Register] = true
+
+      local Offest = 0
+
+      if Global then
+        Offest = IrGenerator.GlobalRegisterOffset
+      end
+
+      return Register + Offest
     end
   end
 end
@@ -223,9 +238,9 @@ function IrGenerator:MarkRegisterNotUsed(State, Register)
   IrGenerator.Registers[Register] = false
 end
 
-function IrGenerator:DefineVariable(State, Variable, Value)
+function IrGenerator:DefineVariable(State, Variable, Value, Global)
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
-  local VariableRegister = IrGenerator:AllocateRegister(State)
+  local VariableRegister = IrGenerator:AllocateRegister(State, Global)
   Scope[Variable.Name] = VariableRegister
 
   if Value then
@@ -467,10 +482,15 @@ end
 
 function IrGenerator:GenerateVariableDeclaration(State, Ast)
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
+  local Global = false
+
+  if IrGenerator.StartLabel == IrGenerator.Label then
+    Global = true
+  end
 
   for Idx, Variable in pairs(Ast.Name) do
     local Value = Ast.Value[((Idx - 1) % #Ast.Value) + 1]
-    IrGenerator:DefineVariable(State, Variable, Value)
+    IrGenerator:DefineVariable(State, Variable, Value, Global)
   end
 end
 
@@ -719,6 +739,7 @@ function IrGenerator:GenerateIr(State)
   IrGenerator:NewIr(State)
 
   IrGenerator.Label = IrGenerator:NewSymbol(State)
+  IrGenerator.StartLabel = IrGenerator.Label
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
     [2] = IrGenerator.Label,
@@ -760,6 +781,10 @@ function LuaIrGenerator:GenerateArguments(Ir)
 
     if IsaArgument.Type == "Register" then
       Prefix = "%"
+      if Argument > IrGenerator.GlobalRegisterOffset then
+        Prefix = "&"
+        Argument = Argument - IrGenerator.GlobalRegisterOffset
+      end
     elseif IsaArgument.Type == "Constant" then
       Prefix = "$"
     elseif IsaArgument.Type == "Label" then
