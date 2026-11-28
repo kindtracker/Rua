@@ -3,7 +3,7 @@ IrGenerator:
   Generate Function Call: Implemented
   Generate Variable Assignment: Implemented
   Generate Local Statement: Partially Implemented -- TODO: Need to check if this TODO is correct
-  Generate Function Declaration: Partially Implemented
+  Generate Function Declaration: Implemented
   Generate Return: Not Implemented
   Generate Break: Not Implemented
   Generate If: Not Implemented
@@ -29,6 +29,24 @@ local LuaIrGenerator = {}
 local Logger = _G.Logger
 
 local Isa = {
+  ["Load.Constant"] = {
+    Arguments = {
+      { Name = "Constant", Type = "Constant" },
+      { Name = "Result", Type = "Register" },
+    },
+  },
+  ["Load.Number"] = {
+    Arguments = {
+      { Name = "Number", Type = "Number" },
+      { Name = "Result", Type = "Register" },
+    },
+  },
+  ["Load.Boolean"] = {
+    Arguments = {
+      { Name = "Boolean", Type = "Boolean" },
+      { Name = "Result", Type = "Register" },
+    },
+  },
   ["Declaration.Function"] = {
     Arguments = {
       { Name = "Label", Type = "Label" },
@@ -50,28 +68,22 @@ local Isa = {
       { Name = "Function", Type = "Register" },
     },
   },
-  ["Load.Constant"] = {
-    Arguments = {
-      { Name = "Constant", Type = "Constant" },
-      { Name = "Result", Type = "Register" },
-    },
-  },
-  ["Load.Number"] = {
-    Arguments = {
-      { Name = "Number", Type = "Number" },
-      { Name = "Result", Type = "Register" },
-    },
-  },
-  ["Load.Boolean"] = {
-    Arguments = {
-      { Name = "Boolean", Type = "Boolean" },
-      { Name = "Result", Type = "Register" },
-    },
-  },
   ["Move"] = {
     Arguments = {
       { Name = "Source", Type = "Register" },
       { Name = "Destination", Type = "Register" },
+    },
+  },
+  ["Jump.True"] = {
+    Arguments = {
+      { Name = "Source", Type = "Register" },
+      { Name = "Destination", Type = "Label" },
+    },
+  },
+  ["Jump.False"] = {
+    Arguments = {
+      { Name = "Source", Type = "Register" },
+      { Name = "Destination", Type = "Label" },
     },
   },
 }
@@ -428,6 +440,38 @@ function IrGenerator:GenerateGroup(State, Ast)
   return IrGenerator:Generate(State, Ast.Expression)
 end
 
+function IrGenerator:GenerateIf(State, Ast)
+  local BodyLabel = IrGenerator:NewSymbol(State)
+  local ElseLabel
+
+  local ConditionRegister = IrGenerator:Generate(State, Ast.Condition)
+
+  if Ast.Else then
+    ElseLabel = IrGenerator:NewSymbol(State)
+
+    IrGenerator.Ir = {
+      [1] = "Jump.False",
+      [2] = ConditionRegister,
+      [3] = ElseLabel,
+    }
+    IrGenerator:NewIr(State)
+  end
+
+  IrGenerator.Ir = {
+    [1] = "Jump.True",
+    [2] = ConditionRegister,
+    [3] = BodyLabel,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator:MarkRegisterNotUsed(State, ConditionRegister)
+
+  IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
+  if Ast.Else then
+    IrGenerator:GenerateBody(State, Ast.Body, ElseLabel)
+  end
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -437,17 +481,7 @@ function IrGenerator:Generate(State, Ast)
     IrGenerator:NewIr(State)
   end
 
-  if Ast.Kind == "FunctionDeclaration" then
-    return IrGenerator:GenerateFunction(State, Ast)
-  elseif Ast.Kind == "FunctionCall" then
-    return IrGenerator:GenerateFunctionCall(State, Ast)
-  elseif Ast.Kind == "VariableDeclaration" then
-    return IrGenerator:GenerateVariableDeclaration(State, Ast)
-  elseif Ast.Kind == "VariableAssign" then
-    return IrGenerator:GenerateVariableAssign(State, Ast)
-  elseif Ast.Kind == "Identifier" then
-    return IrGenerator:GenerateIdentifier(State, Ast)
-  elseif Ast.Kind == "String" then
+  if Ast.Kind == "String" then
     return IrGenerator:GenerateString(State, Ast)
   elseif Ast.Kind == "Number" then
     return IrGenerator:GenerateNumber(State, Ast)
@@ -459,6 +493,18 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateUnary(State, Ast)
   elseif Ast.Kind == "Group" then
     return IrGenerator:GenerateGroup(State, Ast)
+  elseif Ast.Kind == "FunctionDeclaration" then
+    return IrGenerator:GenerateFunction(State, Ast)
+  elseif Ast.Kind == "FunctionCall" then
+    return IrGenerator:GenerateFunctionCall(State, Ast)
+  elseif Ast.Kind == "VariableDeclaration" then
+    return IrGenerator:GenerateVariableDeclaration(State, Ast)
+  elseif Ast.Kind == "VariableAssign" then
+    return IrGenerator:GenerateVariableAssign(State, Ast)
+  elseif Ast.Kind == "Identifier" then
+    return IrGenerator:GenerateIdentifier(State, Ast)
+  elseif Ast.Kind == "If" then
+    return IrGenerator:GenerateIf(State, Ast)
   else
     Logger:Error(
       State,
