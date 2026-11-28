@@ -485,7 +485,7 @@ function IrGenerator:GenerateIf(State, Ast)
   IrGenerator.Label = PreviousLabel
 
   if Ast.Else then
-    IrGenerator:GenerateBody(State, Ast.Else, BodyLabel)
+    IrGenerator:GenerateBody(State, Ast.Else, ElseLabel)
     IrGenerator.Label = ElseLabel
     IrGenerator.Ir = {
       [1] = "Jump.Always",
@@ -606,14 +606,17 @@ function LuaIrGenerator:GenerateArguments(Ir)
 end
 
 function LuaIrGenerator:GenerateFunction(Symbols, Label)
-  local FunctionName = self:GenerateSymbol(Symbols[Label])
+  local FunctionName = LuaIrGenerator:GenerateSymbol(Symbols[Label])
+  if FunctionName == nil then
+    FunctionName = "__anonymous_block_" .. Label
+  end
 
   return string.format("function %s()", FunctionName)
 end
 
 function LuaIrGenerator:GenerateCommand(Ir, Indent)
   local IndentString = ("  "):rep(Indent)
-  local Arguments = self:GenerateArguments(Ir)
+  local Arguments = LuaIrGenerator:GenerateArguments(Ir)
 
   return string.format("%s%s %s", IndentString, Ir[1]:lower(), Arguments)
 end
@@ -646,7 +649,7 @@ function LuaIrGenerator:Generate(State)
         end
 
         if Label ~= 0 then
-          Output[#Output + 1] = self:GenerateFunction(Symbols, Label)
+          Output[#Output + 1] = LuaIrGenerator:GenerateFunction(Symbols, Label)
         end
 
         LastLabel = Label
@@ -657,7 +660,7 @@ function LuaIrGenerator:Generate(State)
         Indent = 1
       end
 
-      Output[#Output + 1] = self:GenerateCommand(Ir, Indent)
+      Output[#Output + 1] = LuaIrGenerator:GenerateCommand(Ir, Indent)
     end
   end
 
