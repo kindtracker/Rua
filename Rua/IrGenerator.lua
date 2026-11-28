@@ -2,7 +2,6 @@
 IrGenerator:
   Generate Function Call: Implemented
   Generate Variable Assignment: Implemented
-  Generate Local Statement: Partially Implemented -- TODO: Need to check if this TODO is correct
   Generate Function Declaration: Implemented
   Generate Return: Not Implemented
   Generate Break: Not Implemented
@@ -16,10 +15,12 @@ IrGenerator:
   Generate String Literal: Implemented
   Generate Boolean Literal: Implemented
   Generate Nil Literal: Not Implemented
+  Generate Anonymous Function: Not Implemented
   Generate Table Constructor: Not Implemented
   Generate Table Indexing: Not Implemented
   Generate Member Access: Not Implemented
-  Generate Anonymous Function: Not Implemented
+
+TODO: Generate symbols for variables
 ]]
 
 local IrGenerator = {}
@@ -58,11 +59,13 @@ local Isa = {
   },
   ["Push"] = {
     Arguments = {
+      { Name = "Stack", Type = "Number" },
       { Name = "Source", Type = "Register" },
     },
   },
   ["Pop"] = {
     Arguments = {
+      { Name = "Stack", Type = "Number" },
       { Name = "Result", Type = "Register" },
     },
   },
@@ -92,6 +95,16 @@ local Isa = {
   ["Jump.Always"] = {
     Arguments = {
       { Name = "Destination", Type = "Label" },
+    },
+  },
+  ["Jump.Always.Register"] = {
+    Arguments = {
+      { Name = "Destination", Type = "Register" },
+    },
+  },
+  ["Get.Pc"] = {
+    Arguments = {
+      { Name = "Destination", Type = "Register" },
     },
   },
 }
@@ -153,6 +166,9 @@ function IrGenerator:Reset(State)
   IrGenerator.NextSymbolId = 1
   IrGenerator.Registers = {}
   IrGenerator.Scopes = {}
+
+  IrGenerator.DataStack = 1
+  IrGenerator.CallStack = 2
 
   for Idx = 1, 256 do
     IrGenerator.Registers[Idx] = false
@@ -293,11 +309,27 @@ function IrGenerator:GenerateFunctionCall(State, Ast)
     local ArgumentRegister = IrGenerator:Generate(State, Argument)
     IrGenerator.Ir = {
       [1] = "Push",
-      [2] = ArgumentRegister,
+      [2] = IrGenerator.DataStack,
+      [3] = ArgumentRegister,
     }
     IrGenerator:NewIr(State)
     IrGenerator:MarkRegisterNotUsed(State, ArgumentRegister)
   end
+
+  local PcRegister = IrGenerator:AllocateRegister(State)
+
+  IrGenerator.Ir = {
+    [1] = "Get.Pc",
+    [2] = PcRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.Ir = {
+    [1] = "Push",
+    [2] = 2,
+    [3] = PcRegister,
+  }
+  IrGenerator:NewIr(State)
 
   IrGenerator.Ir = {
     [1] = "Call",
@@ -567,6 +599,48 @@ function IrGenerator:GenerateNil(State, Ast)
   return ResultRegister
 end
 
+function IrGenerator:GenerateReturn(State, Ast)
+  for Idx = #Ast.Value, 1, -1 do
+    local Value = Ast.Value[Idx]
+    local ValueRegister = IrGenerator:Generate(State, Value)
+
+    IrGenerator.Ir = {
+      [1] = "Push",
+      [2] = IrGenerator.DataStack,
+      [3] = ValueRegister,
+    }
+    IrGenerator:NewIr(State)
+  end
+
+  local ReturnCountRegister = IrGenerator:Generate(State, {
+    Kind = "Number",
+    Value = #Ast.Value,
+  })
+
+  IrGenerator.Ir = {
+    [1] = "Push",
+    [2] = IrGenerator.DataStack,
+    [3] = ReturnCountRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  local PcRegister = IrGenerator:AllocateRegister(State)
+  IrGenerator.Ir = {
+    [1] = "Pop",
+    [2] = IrGenerator.CallStack,
+    [3] = PcRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator.Ir = {
+    [1] = "Jump.Always.Register",
+    [2] = PcRegister,
+  }
+  IrGenerator:NewIr(State)
+
+  IrGenerator:MarkRegisterNotUsed(State, PcRegister)
+end
+
 function IrGenerator:Generate(State, Ast)
   if Ast.Row then
     IrGenerator.Ir = {
@@ -604,6 +678,8 @@ function IrGenerator:Generate(State, Ast)
     return IrGenerator:GenerateIf(State, Ast)
   elseif Ast.Kind == "While" then
     return IrGenerator:GenerateWhile(State, Ast)
+  elseif Ast.Kind == "Return" then
+    return IrGenerator:GenerateReturn(State, Ast)
   else
     Logger:Error(
       State,
