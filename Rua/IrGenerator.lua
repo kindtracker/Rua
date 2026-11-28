@@ -170,7 +170,6 @@ for _, _ in pairs(Isa) do
 end
 
 local BinaryOperations = {
-  "Unknown",
   "Add",
   "Subtract",
   "Multiply",

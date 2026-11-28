@@ -22,7 +22,7 @@ if [ -z "$CCompiler" ]; then
   exit 1
 fi
 
-$CCompiler /tmp/rua_vm.c -o /tmp/rua_vm
+$CCompiler -Wno-pragma-once-outside-header /tmp/rua_vm.c -o /tmp/rua_vm
 /tmp/rua_vm
 ]]
 
