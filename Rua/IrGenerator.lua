@@ -1097,4 +1097,9 @@ function BytecodeGenerator:GenerateBytecode(State)
   end
 end
 
+function BytecodeGenerator:BuildFile(State)
+  BytecodeGenerator:WriteBytes(State, "\127Rua")
+  BytecodeGenerator:GenerateBytecode(State)
+end
+
 return { IrGenerator = IrGenerator, LuaIrGenerator = LuaIrGenerator, BytecodeGenerator = BytecodeGenerator }

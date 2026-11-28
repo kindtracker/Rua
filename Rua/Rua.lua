@@ -272,6 +272,11 @@ function Rua:GenerateBytecode(State)
   BytecodeGenerator:GenerateBytecode(State)
 end
 
+function Rua:BuildFile(State)
+  BytecodeGenerator:Reset(State)
+  BytecodeGenerator:BuildFile(State)
+end
+
 function Rua.new()
   local State = {
     File = {
@@ -285,7 +290,7 @@ function Rua.new()
   return State
 end
 
-function Rua:Compile(State, FileName, OutputFile, Arguments)
+function Rua:Compile(State, FileName)
   local FilePtr, Error = io.open(FileName, "r")
   if not FilePtr then
     return nil, Error
@@ -318,12 +323,13 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
     IrFile:close()
   end
 
-  Rua:GenerateBytecode(State)
+  Rua:BuildFile(State)
   if Rua._DevMode then
     local FilePtr = io.open("Dev/Bytecode", "wb")
     FilePtr:write(State.Program.Bytecode)
     FilePtr:close()
   end
+
   return State.Program.Bytecode, nil
 end
 

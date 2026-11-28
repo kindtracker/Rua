@@ -3,18 +3,28 @@ local Rua = require("Rua.Rua")
 local State = Rua.new()
 
 local FileName = nil
-for ArgumentIndex, Argument in ipairs(arg) do
+local OutputFile = "a.ruac"
+local ArgumentIndex = 1
+while ArgumentIndex <= #arg do
+  local Argument = arg[ArgumentIndex]
+
   if Argument == "--HiddenDevMode" then
     Rua._DevMode = true
+  elseif Argument == "-o" then
+    ArgumentIndex = ArgumentIndex + 1
+    OutputFile = arg[ArgumentIndex]
   else
     FileName = Argument
   end
+
+  ArgumentIndex = ArgumentIndex + 1
 end
 
-if FileName == nil then
+local Result, Error = Rua:Compile(State, FileName)
+if not Result then
   return
 end
 
-local Result, Error = Rua:Compile(State, FileName, FileName .. ".c", {
-  AddMain = true,
-})
+local OutputPtr, OpenError = io.open(OutputFile, "wb")
+OutputPtr:write(Result)
+OutputPtr:close()
