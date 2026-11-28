@@ -23,6 +23,7 @@ IrGenerator:
 
 local IrGenerator = {}
 local LuaIrGenerator = {}
+local BytecodeGenerator = {}
 local Logger = _G.Logger
 
 local Isa = {
@@ -901,4 +902,91 @@ function LuaIrGenerator:Generate(State)
   State.LuaIr = table.concat(Output, "\n")
 end
 
-return { IrGenerator = IrGenerator, LuaIrGenerator = LuaIrGenerator }
+function BytecodeGenerator:Reset(State)
+  State.Program.Bytecode = ""
+end
+
+function BytecodeGenerator:WriteBytes(State, Bytes)
+  State.Program.Bytecode = State.Program.Bytecode .. Bytes
+end
+
+function BytecodeGenerator:WriteUint8(State, Value)
+  if Value < 0 or Value > 0xFF or Value % 1 ~= 0 then
+    Logger:Error(State, "InternalError", "Invalid uint8 value: %s", Value)
+  end
+
+  BytecodeGenerator:WriteBytes(State, string.char(Value))
+end
+
+function BytecodeGenerator:WriteInt8(State, Value)
+  if Value < -0x80 or Value > 0x7F or Value % 1 ~= 0 then
+    Logger:Error(State, "InternalError", "Invalid int8 value: %s", Value)
+  end
+
+  if Value < 0 then
+    Value = Value + 0x100
+  end
+
+  BytecodeGenerator:WriteUint8(State, Value)
+end
+
+function BytecodeGenerator:WriteUint16(State, Value)
+  if Value < 0 or Value > 0xFFFF or Value % 1 ~= 0 then
+    Logger:Error(State, "InternalError", "Invalid uint16 value: %s", Value)
+  end
+
+  for I = 0, 1 do
+    BytecodeGenerator:WriteUint8(State, math.floor(Value / (256 ^ I)) % 256)
+  end
+end
+
+function BytecodeGenerator:WriteInt16(State, Value)
+  if Value < -0x8000 or Value > 0x7FFF or Value % 1 ~= 0 then
+    Logger:Error(State, "InternalError", "Invalid int16 value: %s", Value)
+  end
+
+  if Value < 0 then
+    Value = Value + 0x10000
+  end
+
+  BytecodeGenerator:WriteUint16(State, Value)
+end
+
+function BytecodeGenerator:WriteUint32(State, Value)
+  if Value < 0 or Value > 0xFFFFFFFF or Value % 1 ~= 0 then
+    Logger:Error(State, "InternalError", "Invalid uint32 value: %s", Value)
+  end
+
+  for I = 0, 3 do
+    BytecodeGenerator:WriteUint8(State, math.floor(Value / (256 ^ I)) % 256)
+  end
+end
+
+function BytecodeGenerator:WriteInt32(State, Value)
+  if Value < -0x80000000 or Value > 0x7FFFFFFF or Value % 1 ~= 0 then
+    Logger:Error(State, "InternalError", "Invalid int32 value: %s", Value)
+  end
+
+  if Value < 0 then
+    Value = Value + 0x100000000
+  end
+
+  BytecodeGenerator:WriteUint32(State, Value)
+end
+
+function BytecodeGenerator:WriteString(State, Value)
+  BytecodeGenerator:WriteUint32(State, #Value)
+  BytecodeGenerator:WriteBytes(State, Value)
+end
+
+function BytecodeGenerator:Generate(State, Ir)
+  BytecodeGenerator:WriteInt8(State, 1234)
+end
+
+function BytecodeGenerator:GenerateBytecode(State)
+  for _, Ir in ipairs(State.Program.Ir) do
+    BytecodeGenerator:Generate(State, Ir)
+  end
+end
+
+return { IrGenerator = IrGenerator, LuaIrGenerator = LuaIrGenerator, BytecodeGenerator = BytecodeGenerator }

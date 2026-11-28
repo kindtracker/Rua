@@ -22,7 +22,7 @@
 
   Rua:Run(State, FileName)
     Reads the specified source file, tokenizes its contents,
-    parses the tokens, and populates the resulting AST
+    parses the tokens, and populates the resulting Ast
 
   Rua:Tokenize(State)
     Tokenizes the source code stored in State.File.Content
@@ -179,6 +179,7 @@ local Parser = FrontEnd.Parser
 local AstDesugar = FrontEnd.AstDesugar
 local IrGenerator = FrontEnd.IrGenerator
 local LuaIrGenerator = FrontEnd.LuaIrGenerator
+local BytecodeGenerator = FrontEnd.BytecodeGenerator
 
 function Logger:PrintTable(Value, Indent)
   Indent = Indent or 0
@@ -238,15 +239,7 @@ function Logger:Error(State, ErrorType, ErrorMessageFormat, ...)
     )
   end
 
-  if ErrorType == "SyntaxError" then
-    Parser:Advance(State)
-  else
-    if os.exit then
-      os.exit(1)
-    else
-      assert(false, "")
-    end
-  end
+  os.exit(1)
 
   return State.ErrorMessage
 end
@@ -272,6 +265,11 @@ end
 
 function Rua:GenerateLuaIr(State)
   LuaIrGenerator:Generate(State)
+end
+
+function Rua:GenerateBytecode(State)
+  BytecodeGenerator:Reset(State)
+  BytecodeGenerator:GenerateBytecode(State)
 end
 
 function Rua.new()
@@ -319,6 +317,14 @@ function Rua:Compile(State, FileName, OutputFile, Arguments)
     IrFile:write(State.LuaIr)
     IrFile:close()
   end
+
+  Rua:GenerateBytecode(State)
+  if Rua._DevMode then
+    local FilePtr = io.open("Dev/Bytecode", "wb")
+    FilePtr:write(State.Program.Bytecode)
+    FilePtr:close()
+  end
+  return State.Program.Bytecode, nil
 end
 
 return Rua

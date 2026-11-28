@@ -1,6 +1,7 @@
 local IrGenerators = require("Rua.IrGenerator")
 local IrGenerator = IrGenerators.IrGenerator
 local LuaIrGenerator = IrGenerators.LuaIrGenerator
+local BytecodeGenerator = IrGenerators.BytecodeGenerator
 
 local Tokenizer = {}
 local Parser = {}
@@ -1534,4 +1535,5 @@ return {
   AstDesugar = AstDesugar,
   IrGenerator = IrGenerator,
   LuaIrGenerator = LuaIrGenerator,
+  BytecodeGenerator = BytecodeGenerator,
 }
