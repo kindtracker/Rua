@@ -19,8 +19,6 @@ IrGenerator:
   Generate Table Constructor: Not Implemented
   Generate Table Indexing: Not Implemented
   Generate Member Access: Not Implemented
-
-TODO: Generate symbols for variables
 ]]
 
 local IrGenerator = {}
@@ -54,6 +52,12 @@ local Isa = {
   ["Declaration.Function"] = {
     Arguments = {
       { Name = "Label", Type = "Label" },
+      { Name = "Name", Type = "Symbol" },
+    },
+  },
+  ["Declaration.Variable"] = {
+    Arguments = {
+      { Name = "Variable", Type = "Register" },
       { Name = "Name", Type = "Symbol" },
     },
   },
@@ -165,7 +169,7 @@ function IrGenerator:Reset(State)
   IrGenerator.Pc = 0
   IrGenerator.Label = 0
   IrGenerator.StartLabel = 1
-  IrGenerator.NextSymbolId = 1
+  IrGenerator.Symbols = {}
   IrGenerator.Registers = {}
   IrGenerator.GlobalRegisters = {}
   IrGenerator.Scopes = {}
@@ -176,10 +180,16 @@ function IrGenerator:Reset(State)
   IrGenerator.DataStack = 1
   IrGenerator.CallStack = 2
 
+  IrGenerator.FunctionNamespace = 1
+  IrGenerator.VariableNamespace = 2
+
   for Idx = 1, 256 do
     IrGenerator.Registers[Idx] = false
     IrGenerator.GlobalRegisters[Idx] = false
   end
+
+  IrGenerator.Symbols[IrGenerator.FunctionNamespace] = 1
+  IrGenerator.Symbols[IrGenerator.VariableNamespace] = 1
 
   State.Ir = {}
 end
@@ -243,6 +253,13 @@ function IrGenerator:DefineVariable(State, Variable, Value, Global)
   local VariableRegister = IrGenerator:AllocateRegister(State, Global)
   Scope[Variable.Name] = VariableRegister
 
+  IrGenerator.Ir = {
+    [1] = "Declaration.Variable",
+    [2] = VariableRegister,
+    [3] = Variable,
+  }
+  IrGenerator:NewIr(State)
+
   if Value then
     local ValueRegister = IrGenerator:Generate(State, Value)
 
@@ -258,9 +275,10 @@ function IrGenerator:DefineVariable(State, Variable, Value, Global)
   return VariableRegister
 end
 
-function IrGenerator:NewSymbol(State)
-  local SymbolId = IrGenerator.NextSymbolId
-  IrGenerator.NextSymbolId = IrGenerator.NextSymbolId + 1
+function IrGenerator:NewSymbol(State, NamespaceId)
+  local SymbolId = IrGenerator.Symbols[NamespaceId]
+
+  IrGenerator.Symbols[NamespaceId] = IrGenerator.Symbols[NamespaceId] + 1
   return SymbolId
 end
 
@@ -290,7 +308,7 @@ function IrGenerator:GenerateBody(State, Body, Label)
 end
 
 function IrGenerator:GenerateFunction(State, Ast)
-  local FunctionLabel = IrGenerator:NewSymbol(State)
+  local FunctionLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
 
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
@@ -517,13 +535,13 @@ function IrGenerator:GenerateGroup(State, Ast)
 end
 
 function IrGenerator:GenerateIf(State, Ast)
-  local BodyLabel = IrGenerator:NewSymbol(State)
+  local BodyLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
   local ElseLabel
 
   local ConditionRegister = IrGenerator:Generate(State, Ast.Condition)
 
   if Ast.Else then
-    ElseLabel = IrGenerator:NewSymbol(State)
+    ElseLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
 
     IrGenerator.Ir = {
       [1] = "Jump.False",
@@ -542,7 +560,7 @@ function IrGenerator:GenerateIf(State, Ast)
 
   IrGenerator:MarkRegisterNotUsed(State, ConditionRegister)
 
-  local AfterLabel = IrGenerator:NewSymbol(State)
+  local AfterLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
   local PreviousLabel = IrGenerator.Label
 
   IrGenerator:GenerateBody(State, Ast.Body, BodyLabel)
@@ -569,9 +587,9 @@ function IrGenerator:GenerateIf(State, Ast)
 end
 
 function IrGenerator:GenerateWhile(State, Ast)
-  local ConditionLabel = IrGenerator:NewSymbol(State)
-  local BodyLabel = IrGenerator:NewSymbol(State)
-  local AfterLabel = IrGenerator:NewSymbol(State)
+  local ConditionLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
+  local BodyLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
+  local AfterLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
 
   local BodyStartIdx = #IrGenerator.BodyStarts + 1
   table.insert(IrGenerator.BodyStarts, BodyLabel)
@@ -738,12 +756,12 @@ function IrGenerator:GenerateIr(State)
   }
   IrGenerator:NewIr(State)
 
-  IrGenerator.Label = IrGenerator:NewSymbol(State)
+  IrGenerator.Label = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
   IrGenerator.StartLabel = IrGenerator.Label
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
     [2] = IrGenerator.Label,
-    [3] = "_start",
+    [3] = "__generated_initialize_variables",
   }
   IrGenerator:NewIr(State)
 
@@ -763,16 +781,14 @@ function IrGenerator:GenerateIr(State)
   }
 end
 
-function LuaIrGenerator:GenerateSymbol(Symbol)
-  return Symbol
-end
-
-function LuaIrGenerator:GenerateArguments(Ir)
+function LuaIrGenerator:GenerateArguments(Symbols, Ir)
   local Arguments = {}
 
   local Opcode = Ir[1]
   local IsaCommand = Isa[Opcode]
   local IsaArguments = IsaCommand.Arguments
+
+  local AllowedToQuote = true
 
   for Idx = 2, #Ir do
     local IsaArgument = IsaArguments[Idx - 1]
@@ -783,7 +799,20 @@ function LuaIrGenerator:GenerateArguments(Ir)
       Prefix = "%"
       if Argument > IrGenerator.GlobalRegisterOffset then
         Prefix = "&"
-        Argument = Argument - IrGenerator.GlobalRegisterOffset
+      end
+
+      local Name = Symbols[IrGenerator.VariableNamespace][Argument]
+      if Name then
+        AllowedToQuote = false
+        if type(Name) == "table" then
+          Argument = Name.Name
+        else
+          Argument = Name
+        end
+      else
+        if Prefix == "&" then
+          Argument = Argument - IrGenerator.GlobalRegisterOffset
+        end
       end
     elseif IsaArgument.Type == "Constant" then
       Prefix = "$"
@@ -791,7 +820,7 @@ function LuaIrGenerator:GenerateArguments(Ir)
       Prefix = "@"
     end
 
-    if type(Argument) == "string" then
+    if type(Argument) == "string" and AllowedToQuote then
       Arguments[#Arguments + 1] = Prefix .. string.format("%q", Argument)
     else
       Arguments[#Arguments + 1] = Prefix .. tostring(Argument)
@@ -802,7 +831,7 @@ function LuaIrGenerator:GenerateArguments(Ir)
 end
 
 function LuaIrGenerator:GenerateFunction(Symbols, Label)
-  local FunctionName = LuaIrGenerator:GenerateSymbol(Symbols[Label])
+  local FunctionName = Symbols[IrGenerator.FunctionNamespace][Label]
   if FunctionName == nil then
     FunctionName = "__anonymous_block_" .. Label
   end
@@ -810,9 +839,9 @@ function LuaIrGenerator:GenerateFunction(Symbols, Label)
   return string.format("function %s()", FunctionName)
 end
 
-function LuaIrGenerator:GenerateCommand(Ir, Indent)
+function LuaIrGenerator:GenerateCommand(Symbols, Ir, Indent)
   local IndentString = ("  "):rep(Indent)
-  local Arguments = LuaIrGenerator:GenerateArguments(Ir)
+  local Arguments = LuaIrGenerator:GenerateArguments(Symbols, Ir)
 
   return string.format("%s%s %s", IndentString, Ir[1]:lower(), Arguments)
 end
@@ -822,6 +851,9 @@ function LuaIrGenerator:Generate(State)
   local Symbols = {}
   local LastLabel = 0
 
+  Symbols[IrGenerator.FunctionNamespace] = {}
+  Symbols[IrGenerator.VariableNamespace] = {}
+
   for Idx, Constant in pairs(State.Program.Constants) do
     Output[#Output + 1] = string.format("constant %d, %q", Idx, Constant)
   end
@@ -829,8 +861,10 @@ function LuaIrGenerator:Generate(State)
   Output[#Output + 1] = ""
 
   for _, Ir in ipairs(State.Program.Ir) do
-    if Ir[1]:find("Declaration") then
-      Symbols[Ir[2]] = Ir[3]
+    if Ir[1] == "Declaration.Function" then
+      Symbols[IrGenerator.FunctionNamespace][Ir[2]] = Ir[3]
+    elseif Ir[1] == "Declaration.Variable" then
+      Symbols[IrGenerator.VariableNamespace][Ir[2]] = Ir[3]
     end
   end
 
@@ -856,7 +890,7 @@ function LuaIrGenerator:Generate(State)
         Indent = 1
       end
 
-      Output[#Output + 1] = LuaIrGenerator:GenerateCommand(Ir, Indent)
+      Output[#Output + 1] = LuaIrGenerator:GenerateCommand(Symbols, Ir, Indent)
     end
   end
 
