@@ -1087,6 +1087,11 @@ function BytecodeGenerator:Generate(State, Command)
 end
 
 function BytecodeGenerator:GenerateBytecode(State)
+  BytecodeGenerator:WriteUint32(State, #State.Program.Constants)
+  for _, Constant in ipairs(State.Program.Constants) do
+    BytecodeGenerator:WriteString(State, Constant)
+  end
+
   for _, Ir in ipairs(State.Program.Ir) do
     BytecodeGenerator:Generate(State, Ir)
   end
