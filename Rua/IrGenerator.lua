@@ -21,6 +21,8 @@ IrGenerator:
   Generate Member Access: Not Implemented
 ]]
 
+local FFI = require("ffi")
+
 local IrGenerator = {}
 local LuaIrGenerator = {}
 local BytecodeGenerator = {}
@@ -28,92 +30,144 @@ local Logger = _G.Logger
 
 local Isa = {
   ["Load.Constant"] = {
+    Opcode = 1,
     Arguments = {
       { Name = "Constant", Type = "Constant" },
       { Name = "Result", Type = "Register" },
     },
   },
   ["Load.Number"] = {
+    Opcode = 2,
     Arguments = {
       { Name = "Number", Type = "Number" },
       { Name = "Result", Type = "Register" },
     },
   },
   ["Load.Boolean"] = {
+    Opcode = 3,
     Arguments = {
       { Name = "Boolean", Type = "Boolean" },
       { Name = "Result", Type = "Register" },
     },
   },
   ["Load.Nil"] = {
+    Opcode = 4,
+    Arguments = {
+      { Name = "Result", Type = "Register" },
+    },
+  },
+  ["Load.Table"] = {
+    Opcode = 5,
     Arguments = {
       { Name = "Result", Type = "Register" },
     },
   },
   ["Declaration.Function"] = {
+    Opcode = 6,
     Arguments = {
       { Name = "Label", Type = "Label" },
-      { Name = "Name", Type = "Symbol" },
+      { Name = "Name", Type = "Constant" },
     },
   },
   ["Declaration.Variable"] = {
+    Opcode = 7,
     Arguments = {
       { Name = "Variable", Type = "Register" },
-      { Name = "Name", Type = "Symbol" },
+      { Name = "Name", Type = "Constant" },
+    },
+  },
+  ["Index"] = {
+    Opcode = 8,
+    Arguments = {
+      { Name = "Source", Type = "Register" },
+      { Name = "Key", Type = "Register" },
+    },
+  },
+  ["NewIndex"] = {
+    Opcode = 9,
+    Arguments = {
+      { Name = "Source", Type = "Register" },
+      { Name = "Value", Type = "Register" },
     },
   },
   ["Push"] = {
+    Opcode = 10,
     Arguments = {
       { Name = "Stack", Type = "Number" },
       { Name = "Source", Type = "Register" },
     },
   },
   ["Pop"] = {
+    Opcode = 11,
     Arguments = {
       { Name = "Stack", Type = "Number" },
       { Name = "Result", Type = "Register" },
     },
   },
   ["Call"] = {
+    Opcode = 12,
     Arguments = {
       { Name = "Function", Type = "Register" },
     },
   },
   ["Move"] = {
+    Opcode = 13,
     Arguments = {
       { Name = "Source", Type = "Register" },
       { Name = "Destination", Type = "Register" },
     },
   },
   ["Jump.True"] = {
+    Opcode = 14,
     Arguments = {
       { Name = "Source", Type = "Register" },
       { Name = "Destination", Type = "Label" },
     },
   },
   ["Jump.False"] = {
+    Opcode = 15,
     Arguments = {
       { Name = "Source", Type = "Register" },
       { Name = "Destination", Type = "Label" },
     },
   },
   ["Jump.Always"] = {
+    Opcode = 16,
     Arguments = {
       { Name = "Destination", Type = "Label" },
     },
   },
   ["Jump.Always.Register"] = {
+    Opcode = 17,
     Arguments = {
       { Name = "Destination", Type = "Register" },
     },
   },
   ["Get.Pc"] = {
+    Opcode = 18,
     Arguments = {
       { Name = "Destination", Type = "Register" },
       { Name = "Offset", Type = "Number" },
     },
   },
+  ["File"] = {
+    Opcode = 19,
+    Arguments = {
+      { Name = "File", Type = "Constant" },
+    },
+  },
+  ["Row"] = {
+    Opcode = 20,
+    Arguments = {
+      { Name = "Value", Type = "Number" },
+    },
+  },
 }
+
+local OpcodeCount = 0
+for _, _ in pairs(Isa) do
+  OpcodeCount = OpcodeCount + 1
+end
 
 local BinaryOperations = {
   "Unknown",
@@ -139,7 +193,10 @@ local BinaryOperations = {
 }
 
 for Id, Name in ipairs(BinaryOperations) do
-  Isa["Any." .. Name] = {
+  OpcodeCount = OpcodeCount + 1
+
+  Isa[Name] = {
+    Opcode = OpcodeCount,
     Arguments = {
       { Name = "Left", Type = "Register" },
       { Name = "Right", Type = "Register" },
@@ -156,7 +213,10 @@ local UnaryOperations = {
 }
 
 for Id, Name in ipairs(UnaryOperations) do
-  Isa["Any." .. Name] = {
+  OpcodeCount = OpcodeCount + 1
+
+  Isa[Name] = {
+    Opcode = OpcodeCount,
     Arguments = {
       { Name = "Value", Type = "Register" },
       { Name = "Result", Type = "Register" },
@@ -252,12 +312,13 @@ end
 function IrGenerator:DefineVariable(State, Variable, Value, Global)
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
   local VariableRegister = IrGenerator:AllocateRegister(State, Global)
+  local VariableNameConstant = IrGenerator:AddConstant(Variable.Name)
   Scope[Variable.Name] = VariableRegister
 
   IrGenerator.Ir = {
     [1] = "Declaration.Variable",
     [2] = VariableRegister,
-    [3] = Variable,
+    [3] = VariableNameConstant,
   }
   IrGenerator:NewIr(State)
 
@@ -310,11 +371,12 @@ end
 
 function IrGenerator:GenerateFunction(State, Ast)
   local FunctionLabel = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
+  local FunctionNameConstant = IrGenerator:AddConstant(Ast.Name.Name)
 
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
     [2] = FunctionLabel,
-    [3] = Ast.Name.Name,
+    [3] = FunctionNameConstant,
   }
   IrGenerator:NewIr(State)
 
@@ -751,18 +813,21 @@ function IrGenerator:Generate(State, Ast)
 end
 
 function IrGenerator:GenerateIr(State)
+  local FileConstant = IrGenerator:AddConstant(State.File.Name)
   IrGenerator.Ir = {
     [1] = "File",
-    [2] = State.File.Name,
+    [2] = FileConstant,
   }
   IrGenerator:NewIr(State)
+
+  local FunctionNameConstant = IrGenerator:AddConstant("__generated_initialize_variables")
 
   IrGenerator.Label = IrGenerator:NewSymbol(State, IrGenerator.FunctionNamespace)
   IrGenerator.StartLabel = IrGenerator.Label
   IrGenerator.Ir = {
     [1] = "Declaration.Function",
     [2] = IrGenerator.Label,
-    [3] = "__generated_initialize_variables",
+    [3] = FunctionNameConstant,
   }
   IrGenerator:NewIr(State)
 
@@ -974,13 +1039,51 @@ function BytecodeGenerator:WriteInt32(State, Value)
   BytecodeGenerator:WriteUint32(State, Value)
 end
 
+function BytecodeGenerator:WriteFloat32(State, Value)
+  local Number = FFI.new("float[1]", Value)
+  local Bytes = FFI.cast("uint8_t*", Number)
+
+  for Idx = 0, 3 do
+    BytecodeGenerator:WriteUint8(State, Bytes[Idx])
+  end
+end
+
+function BytecodeGenerator:WriteFloat64(State, Value)
+  local Number = FFI.new("double[1]", Value)
+  local Bytes = FFI.cast("uint8_t*", Number)
+
+  for Idx = 0, 7 do
+    BytecodeGenerator:WriteUint8(State, Bytes[Idx])
+  end
+end
+
 function BytecodeGenerator:WriteString(State, Value)
   BytecodeGenerator:WriteUint32(State, #Value)
   BytecodeGenerator:WriteBytes(State, Value)
 end
 
-function BytecodeGenerator:Generate(State, Ir)
-  BytecodeGenerator:WriteInt8(State, 1234)
+function BytecodeGenerator:Generate(State, Command)
+  local IsaCommand = Isa[Command[1]]
+  local Opcode = IsaCommand.Opcode
+
+  BytecodeGenerator:WriteUint8(State, Opcode)
+
+  for Idx = 2, #Command do
+    local IsaArgument = IsaCommand.Arguments[Idx - 1]
+    local Argument = Command[Idx]
+
+    if IsaArgument.Type == "Constant" then
+      BytecodeGenerator:WriteUint32(State, Argument)
+    elseif IsaArgument.Type == "Label" then
+      BytecodeGenerator:WriteUint32(State, Argument)
+    elseif IsaArgument.Type == "Register" then
+      BytecodeGenerator:WriteUint16(State, Argument)
+    elseif IsaArgument.Type == "Boolean" then
+      BytecodeGenerator:WriteUint8(State, Argument)
+    elseif IsaArgument.Type == "Number" then
+      BytecodeGenerator:WriteFloat32(State, Argument)
+    end
+  end
 end
 
 function BytecodeGenerator:GenerateBytecode(State)
