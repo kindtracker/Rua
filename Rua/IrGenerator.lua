@@ -20,8 +20,6 @@ IrGenerator:
   Generate Table Indexing: Not Implemented
   Generate Member Access: Not Implemented
   Generate Anonymous Function: Not Implemented
-
-TODO: Add local registers
 ]]
 
 local IrGenerator = {}
@@ -232,14 +230,28 @@ function IrGenerator:NewSymbol(State)
   return SymbolId
 end
 
+function IrGenerator:PushScope(State)
+  table.insert(IrGenerator.Scopes, {})
+end
+
+function IrGenerator:PopScope(State)
+  local Scope = table.remove(IrGenerator.Scopes)
+
+  for _, Register in pairs(Scope) do
+    IrGenerator.Registers[Register] = false
+  end
+end
+
 function IrGenerator:GenerateBody(State, Body, Label)
   local PreviousLabel = IrGenerator.Label
+  IrGenerator:PushScope(State)
   IrGenerator.Label = Label
 
   for _, Ast in ipairs(Body) do
     IrGenerator:Generate(State, Ast)
   end
 
+  IrGenerator:PopScope(State)
   IrGenerator.Label = PreviousLabel
 end
 
@@ -258,7 +270,7 @@ function IrGenerator:GenerateFunction(State, Ast)
 
   local Scope = IrGenerator.Scopes[#IrGenerator.Scopes]
   for _, Argument in pairs(Ast.Arguments) do
-    local ArgumentRegister = IrGenerator:DefineVariable(State, Ast.Name)
+    local ArgumentRegister = IrGenerator:DefineVariable(State, Argument)
 
     IrGenerator.Ir = {
       [1] = "Pop",
